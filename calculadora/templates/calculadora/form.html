@@ -1,0 +1,239 @@
+{% extends "calculadora/base.html" %}
+
+{% block content %}
+<div class="container" x-data="calculadora()">
+    <div class="card">
+        <div class="card-header">
+            <h1>Simulador de Crédito Hipotecario</h1>
+            <p>Evalúa tu capacidad de crédito para adquirir un bien inmueble en Chile</p>
+        </div>
+
+        <form method="post" @submit="submitting = true">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+            <div class="errorlist" style="background:#fef2f2; border:1px solid #dc2626; border-radius:8px; padding:12px; margin-bottom:16px;">
+                {{ form.non_field_errors }}
+            </div>
+            {% endif %}
+
+            <p class="section-title">Datos de Contacto</p>
+            <div class="form-row">
+                <div class="form-group {% if form.nombre_completo.errors %}field-error{% endif %}">
+                    <label for="id_nombre_completo">Nombre Completo <span class="required">*</span></label>
+                    {{ form.nombre_completo }}
+                    {{ form.nombre_completo.errors }}
+                </div>
+                <div class="form-group {% if form.email.errors %}field-error{% endif %}">
+                    <label for="id_email">Email <span class="required">*</span></label>
+                    {{ form.email }}
+                    {{ form.email.errors }}
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group {% if form.telefono.errors %}field-error{% endif %}">
+                    <label for="id_telefono">Teléfono</label>
+                    {{ form.telefono }}
+                    {{ form.telefono.errors }}
+                </div>
+                <div></div>
+            </div>
+
+            <p class="section-title">Datos del Crédito</p>
+            <div class="form-row">
+                <div class="form-group {% if form.valor_propiedad.errors %}field-error{% endif %}">
+                    <label for="id_valor_propiedad">Valor de la Propiedad (UF)</label>
+                    {{ form.valor_propiedad }}
+                    {{ form.valor_propiedad.errors }}
+                </div>
+                <div class="form-group {% if form.pie.errors %}field-error{% endif %}">
+                    <label for="id_pie">Pie / Enganche (UF)</label>
+                    {{ form.pie }}
+                    {{ form.pie.errors }}
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group {% if form.tasa_interes_id.errors %}field-error{% endif %}">
+                    <label for="id_tasa_interes_id">Tasa de Interés</label>
+                    {{ form.tasa_interes_id }}
+                    {{ form.tasa_interes_id.errors }}
+                </div>
+                <div class="form-group {% if form.plazo_anios.errors %}field-error{% endif %}">
+                    <label for="id_plazo_anios">Plazo del Crédito</label>
+                    {{ form.plazo_anios }}
+                    {{ form.plazo_anios.errors }}
+                </div>
+            </div>
+
+            <p class="section-title">Datos Financieros</p>
+            <div class="form-row">
+                <div class="form-group {% if form.renta_bruta_clp.errors %}field-error{% endif %}">
+                    <label for="id_renta_bruta_clp">Renta Bruta Mensual ($CLP)</label>
+                    {{ form.renta_bruta_clp }}
+                    {{ form.renta_bruta_clp.errors }}
+                </div>
+                <div class="form-group {% if form.deudas_vigentes_clp.errors %}field-error{% endif %}">
+                    <label for="id_deudas_vigentes_clp">Deudas Vigentes Mensuales ($CLP)</label>
+                    {{ form.deudas_vigentes_clp }}
+                    {{ form.deudas_vigentes_clp.errors }}
+                </div>
+            </div>
+
+            <!-- Preview en vivo -->
+            <div class="preview-box" x-show="mostrarPreview" x-cloak x-transition>
+                <h3>Vista Previa de tu Evaluación</h3>
+                <div class="preview-row">
+                    <span class="label">Monto del Crédito</span>
+                    <span class="value" x-text="formatUF(montoCredito)"></span>
+                </div>
+                <div class="preview-row">
+                    <span class="label">Cuota Mensual Estimada</span>
+                    <span class="value" x-text="formatUF(cuotaMensualUF) + '  (' + formatCLP(cuotaMensualCLP) + ')'"></span>
+                </div>
+                <div class="preview-row">
+                    <span class="label">Relación Cuota/Ingreso</span>
+                    <span class="value"
+                          :style="'color:' + (relacionCI <= 25 ? colorCalifica : colorNoCalifica)"
+                          x-text="relacionCI.toFixed(2) + '%'"></span>
+                </div>
+                <div class="preview-row">
+                    <span class="label">Renta Mínima Requerida</span>
+                    <span class="value" x-text="formatCLP(rentaMinima)"></span>
+                </div>
+                <div class="preview-row">
+                    <span class="label">Costo Total del Crédito</span>
+                    <span class="value" x-text="formatUF(costoTotal)"></span>
+                </div>
+                <div style="text-align: center;">
+                    <span class="result-badge"
+                          :class="relacionCI <= 25 ? 'califica' : 'no-califica'"
+                          x-text="relacionCI <= 25 ? '✓ CALIFICA' : '✗ NO CALIFICA'">
+                    </span>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-submit" :disabled="submitting">
+                <span x-show="!submitting">Evaluar y Descargar PDF</span>
+                <span x-show="submitting">Generando evaluación...</span>
+            </button>
+        </form>
+    </div>
+
+    <div style="text-align:center; padding: 8px; font-size: 0.75rem; color: #a0aec0;">
+        Valor UF utilizado: <span x-text="formatCLP(valorUF)"></span>
+    </div>
+</div>
+{% endblock %}
+
+{% load l10n %}
+{% block scripts %}
+{% localize off %}
+<script>
+function calculadora() {
+    return {
+        tasas: {{ tasas_json|safe }},
+        valorUF: {{ valor_uf }},
+        colorCalifica: '{{ config.form_color_califica|default:"#16a34a" }}',
+        colorNoCalifica: '{{ config.form_color_no_califica|default:"#dc2626" }}',
+        valorPropiedad: 0,
+        pie: 0,
+        plazoAnios: 20,
+        tasaInteresId: '',
+        tasaPorcentaje: 0,
+        rentaBrutaCLP: 0,
+        deudasVigentesCLP: 0,
+        rentaBrutaDisplay: '',
+        deudasVigentesDisplay: '',
+        montoCredito: 0,
+        cuotaMensualUF: 0,
+        cuotaMensualCLP: 0,
+        relacionCI: 0,
+        rentaMinima: 0,
+        costoTotal: 0,
+        mostrarPreview: false,
+        submitting: false,
+
+        init() {
+            if (this.tasas.length > 0) {
+                this.tasaInteresId = this.tasas[0].id.toString();
+                this.tasaPorcentaje = this.tasas[0].porcentaje;
+            }
+            this.$watch('valorPropiedad', () => this.calcular());
+            this.$watch('pie', () => this.calcular());
+            this.$watch('plazoAnios', () => this.calcular());
+        },
+
+        formatMiles(num) {
+            if (!num && num !== 0) return '';
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        },
+
+        parseMiles(str) {
+            if (!str) return 0;
+            return parseInt(str.replace(/\./g, ''), 10) || 0;
+        },
+
+        onRentaInput($event) {
+            let raw = $event.target.value.replace(/[^\d]/g, '');
+            this.rentaBrutaCLP = parseInt(raw, 10) || 0;
+            this.rentaBrutaDisplay = this.formatMiles(this.rentaBrutaCLP);
+            this.$nextTick(() => { $event.target.value = this.rentaBrutaDisplay; });
+            this.calcular();
+        },
+
+        onDeudasInput($event) {
+            let raw = $event.target.value.replace(/[^\d]/g, '');
+            this.deudasVigentesCLP = parseInt(raw, 10) || 0;
+            this.deudasVigentesDisplay = this.formatMiles(this.deudasVigentesCLP);
+            this.$nextTick(() => { $event.target.value = this.deudasVigentesDisplay; });
+            this.calcular();
+        },
+
+        onTasaChange() {
+            const tasa = this.tasas.find(t => t.id.toString() === this.tasaInteresId);
+            if (tasa) this.tasaPorcentaje = tasa.porcentaje;
+            this.calcular();
+        },
+
+        calcular() {
+            const P = this.valorPropiedad - this.pie;
+            this.montoCredito = Math.max(P, 0);
+
+            if (P <= 0 || this.tasaPorcentaje <= 0 || this.plazoAnios <= 0) {
+                this.cuotaMensualUF = 0;
+                this.cuotaMensualCLP = 0;
+                this.relacionCI = 0;
+                this.rentaMinima = 0;
+                this.costoTotal = 0;
+                this.mostrarPreview = false;
+                return;
+            }
+
+            const r = this.tasaPorcentaje / 100 / 12;
+            const n = this.plazoAnios * 12;
+            this.cuotaMensualUF = P * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+            this.cuotaMensualCLP = Math.round(this.cuotaMensualUF * this.valorUF);
+
+            const cargaTotal = this.cuotaMensualCLP + (this.deudasVigentesCLP || 0);
+            this.relacionCI = this.rentaBrutaCLP > 0
+                ? cargaTotal / this.rentaBrutaCLP * 100
+                : 100;
+
+            this.rentaMinima = Math.round(cargaTotal / 0.25);
+            this.costoTotal = this.cuotaMensualUF * n;
+
+            this.mostrarPreview = this.cuotaMensualCLP > 0 && this.rentaBrutaCLP > 0;
+        },
+
+        formatUF(value) {
+            return value.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' UF';
+        },
+
+        formatCLP(value) {
+            return '$' + Math.round(value).toLocaleString('es-CL');
+        }
+    }
+}
+</script>
+{% endlocalize %}
+{% endblock %}

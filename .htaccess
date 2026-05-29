@@ -1,0 +1,15 @@
+# cPanel Passenger restart trigger
+PassengerEnabled On
+PassengerAppRoot /home/USUARIO/calculadora-inmobiliaria
+
+# Force Passenger to restart on deploy (touch this file to restart)
+# touch tmp/restart.txt
+
+# Deny access to sensitive files
+<FilesMatch "\.(env|sqlite3|pyc)$">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "^(manage\.py|seed\.py|passenger_wsgi\.py)$">
+    Require all denied
+</FilesMatch>

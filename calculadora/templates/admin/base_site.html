@@ -1,0 +1,179 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    :root {
+        --primary: #270164;
+        --secondary: #8a3ca9;
+        --accent: #d609be;
+        --primary-light: #3a1a7e;
+        --bg-dark: #1a0142;
+    }
+
+    /* Header */
+    #header {
+        background: linear-gradient(135deg, var(--primary), var(--secondary)) !important;
+        padding: 14px 24px !important;
+    }
+    #header a:link, #header a:visited,
+    #branding h1, #branding h1 a:link, #branding h1 a:visited {
+        color: #fff !important;
+    }
+    #branding h1 {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 700;
+    }
+    #branding h1 .admin-logo {
+        height: 32px;
+        width: auto;
+    }
+    #user-tools {
+        color: rgba(255,255,255,0.85);
+    }
+    #user-tools a { color: #e8d0f5 !important; }
+    #user-tools a:hover { color: #fff !important; }
+
+    /* Sidebar / Module headers */
+    div.module h2, caption {
+        background: var(--primary) !important;
+        color: #fff !important;
+    }
+    .module h3 {
+        background: var(--secondary) !important;
+        color: #fff !important;
+    }
+
+    /* Buttons */
+    .submit-row input[type="submit"],
+    input[type="submit"], .button, a.button {
+        background: var(--primary) !important;
+        border-color: var(--primary) !important;
+        color: #fff !important;
+    }
+    .submit-row input[type="submit"]:hover,
+    input[type="submit"]:hover, .button:hover, a.button:hover {
+        background: var(--primary-light) !important;
+    }
+    .submit-row input.default {
+        background: var(--accent) !important;
+        border-color: var(--accent) !important;
+    }
+    .submit-row input.default:hover {
+        background: #b808a0 !important;
+    }
+
+    /* Links */
+    a:link, a:visited { color: var(--secondary); }
+    a:hover { color: var(--accent); }
+    #changelist-filter a:hover,
+    #changelist-filter li.selected a {
+        color: var(--accent) !important;
+    }
+
+    /* Breadcrumbs */
+    div.breadcrumbs {
+        background: var(--bg-dark) !important;
+        color: #cbb3e0 !important;
+    }
+    div.breadcrumbs a { color: #e8d0f5 !important; }
+    div.breadcrumbs a:hover { color: #fff !important; }
+
+    /* Object tools */
+    .object-tools a:link, .object-tools a:visited {
+        background: var(--secondary) !important;
+    }
+    .object-tools a:hover {
+        background: var(--accent) !important;
+    }
+
+    /* Changelist filter */
+    #changelist-filter h2 {
+        background: var(--primary) !important;
+    }
+    #changelist-filter h3 {
+        background: var(--secondary) !important;
+        color: #fff !important;
+        padding: 6px 12px;
+        border-radius: 4px;
+    }
+
+    /* Selected row */
+    .row-selected td, .row-selected th {
+        background: #f3e8ff !important;
+    }
+
+    /* Boolean icons */
+    .field-califica img[alt="True"] + span,
+    td.field-califica:has(img[alt="True"]) {
+        color: #16a34a;
+    }
+
+    /* Action checkbox */
+    #action-toggle, .action-select {
+        accent-color: var(--accent);
+    }
+
+    /* Tab active */
+    .tabs .active a {
+        background: var(--primary) !important;
+        color: #fff !important;
+    }
+
+    /* Dark mode support */
+    @media (prefers-color-scheme: dark) {
+        body { background: #0f0028; color: #e0d0f0; }
+        .module { background: #1a0a30; }
+        #container { background: #0f0028; }
+        #content { background: #0f0028; }
+        .form-row { border-color: #2a1050 !important; }
+    }
+
+    /* PDF Preview button */
+    .btn-preview-pdf {
+        display: inline-block;
+        background: var(--accent);
+        color: #fff !important;
+        padding: 6px 16px;
+        border-radius: 4px;
+        text-decoration: none;
+        font-size: 0.85rem;
+        font-weight: 600;
+        transition: background 0.2s;
+    }
+    .btn-preview-pdf:hover {
+        background: #b808a0;
+        color: #fff !important;
+    }
+
+    /* Preview iframe container */
+    .pdf-preview-container {
+        background: #f8f4ff;
+        border: 2px solid var(--secondary);
+        border-radius: 8px;
+        padding: 16px;
+        margin: 16px 0;
+    }
+    .pdf-preview-container h3 {
+        color: var(--primary) !important;
+        background: none !important;
+        margin-bottom: 12px;
+    }
+    .pdf-preview-container iframe {
+        width: 100%;
+        height: 800px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+</style>
+{% endblock %}
+
+{% block branding %}
+<h1>
+    <img src="{% static 'calculadora/img/logo-white.png' %}" alt="SysCode" class="admin-logo" onerror="this.style.display='none'">
+    Calculadora Inmobiliaria
+</h1>
+{% endblock %}

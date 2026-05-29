@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Calculadora Hipotecaria{% endblock %}</title>
+    <style>
+        :root {
+            --color-primary: {{ config.form_color_primario|default:"#1e3a5f" }};
+            --color-secondary: {{ config.form_color_secundario|default:"#4a90d9" }};
+            --color-califica: {{ config.form_color_califica|default:"#16a34a" }};
+            --color-no-califica: {{ config.form_color_no_califica|default:"#dc2626" }};
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f4f8;
+            color: #1a202c;
+            line-height: 1.6;
+        }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+        .card-header {
+            background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+            color: #fff;
+            padding: 24px 32px;
+            border-radius: 12px 12px 0 0;
+            margin: -32px -32px 24px -32px;
+        }
+        .card-header h1 { font-size: 1.5rem; font-weight: 700; }
+        .card-header p { font-size: 0.9rem; opacity: 0.85; margin-top: 4px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block; font-weight: 600; font-size: 0.85rem;
+            color: #4a5568; margin-bottom: 4px;
+        }
+        .form-input {
+            width: 100%; padding: 10px 14px; border: 1px solid #e2e8f0;
+            border-radius: 8px; font-size: 0.95rem; transition: border-color 0.2s;
+            background: #fff;
+        }
+        .form-input:focus { outline: none; border-color: var(--color-secondary); box-shadow: 0 0 0 3px rgba(74,144,217,0.15); }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+        .btn-submit {
+            width: 100%; padding: 14px;
+            background: linear-gradient(135deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 70%, #fff));
+            color: #fff; border: none; border-radius: 8px; font-size: 1rem;
+            font-weight: 600; cursor: pointer; transition: opacity 0.2s;
+            margin-top: 8px;
+        }
+        .btn-submit:hover { opacity: 0.9; }
+        .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+        .preview-box {
+            background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+            padding: 20px; margin-top: 16px;
+        }
+        .preview-box h3 { font-size: 0.95rem; color: #4a5568; margin-bottom: 12px; }
+        .preview-row {
+            display: flex; justify-content: space-between; padding: 6px 0;
+            border-bottom: 1px solid #edf2f7; font-size: 0.9rem;
+        }
+        .preview-row:last-child { border-bottom: none; }
+        .preview-row .label { color: #718096; }
+        .preview-row .value { font-weight: 600; color: #2d3748; }
+        .result-badge {
+            display: inline-block; padding: 8px 20px; border-radius: 20px;
+            font-weight: 700; font-size: 1rem; text-align: center;
+            margin-top: 12px;
+        }
+        .result-badge.califica { background-color: color-mix(in srgb, var(--color-califica) 15%, #fff); color: var(--color-califica); }
+        .result-badge.no-califica { background-color: color-mix(in srgb, var(--color-no-califica) 15%, #fff); color: var(--color-no-califica); }
+        .section-title {
+            font-size: 1rem; font-weight: 700; color: var(--color-primary);
+            margin: 24px 0 12px 0; padding-bottom: 6px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .errorlist { list-style: none; color: var(--color-no-califica); font-size: 0.8rem; margin-top: 4px; }
+        .field-error .form-input { border-color: var(--color-no-califica); }
+        .required { color: var(--color-no-califica); }
+        [x-cloak] { display: none !important; }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    {% block content %}{% endblock %}
+    {% block scripts %}{% endblock %}
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</body>
+</html>

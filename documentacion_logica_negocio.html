@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentación de Lógica de Negocio - Calculadora Inmobiliaria</title>
+    <style>
+        :root { --primary: #1e3a5f; --secondary: #4a90d9; --green: #16a34a; --red: #dc2626; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.7; color: #1a202c; background: #f8fafc; padding: 40px 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        h1 { color: var(--primary); font-size: 1.8rem; margin-bottom: 8px; }
+        h2 { color: var(--primary); font-size: 1.4rem; margin: 32px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #e2e8f0; }
+        h3 { color: var(--secondary); font-size: 1.1rem; margin: 20px 0 8px; }
+        p { margin-bottom: 12px; }
+        .subtitle { color: #718096; font-size: 0.95rem; margin-bottom: 24px; }
+        table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.9rem; }
+        th, td { padding: 10px 14px; border: 1px solid #e2e8f0; text-align: left; }
+        th { background: var(--primary); color: #fff; font-weight: 600; }
+        tr:nth-child(even) { background: #f7fafc; }
+        .formula-box { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 8px; padding: 20px; margin: 16px 0; font-family: 'Courier New', monospace; }
+        .formula-box .label { font-family: -apple-system, sans-serif; font-weight: 600; color: var(--primary); display: block; margin-bottom: 8px; }
+        .highlight { background: #fef3c7; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+        .threshold { background: #dcfce7; border: 1px solid #86efac; border-radius: 8px; padding: 16px 20px; margin: 16px 0; }
+        .threshold-fail { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 16px 20px; margin: 16px 0; }
+        .example { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 16px 0; }
+        .example h4 { color: var(--secondary); margin-bottom: 10px; }
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-weight: 700; font-size: 0.85rem; }
+        .badge-ok { background: #dcfce7; color: var(--green); }
+        .badge-fail { background: #fef2f2; color: var(--red); }
+        code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+        .note { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; margin: 16px 0; font-size: 0.9rem; }
+        .toc { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 32px; }
+        .toc ul { list-style: none; padding-left: 0; }
+        .toc li { padding: 4px 0; }
+        .toc a { color: var(--secondary); text-decoration: none; }
+        .toc a:hover { text-decoration: underline; }
+        .validation-table td:first-child { font-weight: 600; white-space: nowrap; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+<h1>📐 Documentación de Lógica de Negocio</h1>
+<p class="subtitle">Calculadora Inmobiliaria — Simulador de Crédito Hipotecario Chile</p>
+
+<div class="toc">
+    <strong>Índice</strong>
+    <ul>
+        <li><a href="#variables">1. Variables de Entrada</a></li>
+        <li><a href="#calculo-cuota">2. Cálculo de Cuota Mensual (Amortización Francesa)</a></li>
+        <li><a href="#evaluacion">3. Evaluación de Crédito</a></li>
+        <li><a href="#umbral">4. Umbral de Aprobación</a></li>
+        <li><a href="#validaciones">5. Validaciones de Negocio</a></li>
+        <li><a href="#ejemplo-califica">6. Ejemplo: Cliente que Califica</a></li>
+        <li><a href="#ejemplo-no-califica">7. Ejemplo: Cliente que No Califica</a></li>
+        <li><a href="#casos-borde">8. Casos Borde</a></li>
+        <li><a href="#resumen">9. Resumen de Reglas</a></li>
+    </ul>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="variables">1. Variables de Entrada</h2>
+
+<table>
+    <tr><th>Variable</th><th>Unidad</th><th>Descripción</th><th>Restricción</th></tr>
+    <tr><td>Valor Propiedad</td><td>UF</td><td>Precio total del inmueble</td><td>&gt; 0.01</td></tr>
+    <tr><td>Pie (Enganche)</td><td>UF</td><td>Monto inicial aportado por el comprador</td><td>≥ 0 y &lt; Valor Propiedad</td></tr>
+    <tr><td>Plazo</td><td>Años</td><td>Duración del crédito</td><td>5, 10, 15, 20, 25 o 30</td></tr>
+    <tr><td>Tasa de Interés</td><td>% anual</td><td>Tasa fija anual del crédito</td><td>0.1% a 30% (configurable por admin)</td></tr>
+    <tr><td>Renta Bruta Mensual</td><td>$CLP</td><td>Ingreso bruto mensual del solicitante</td><td>≥ 1</td></tr>
+    <tr><td>Deudas Vigentes</td><td>$CLP</td><td>Total de cuotas mensuales de deudas existentes</td><td>≥ 0 (opcional, default 0)</td></tr>
+    <tr><td>Valor UF</td><td>$CLP</td><td>Valor actual de la UF (configurado por admin)</td><td>Configurado en panel admin</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="calculo-cuota">2. Cálculo de Cuota Mensual (Amortización Francesa)</h2>
+
+<p>Se utiliza el sistema de <strong>amortización francesa</strong> (cuota fija), que es el estándar bancario en Chile para créditos hipotecarios.</p>
+
+<h3>Paso 1: Monto del Crédito</h3>
+<div class="formula-box">
+    <span class="label">Monto Crédito:</span>
+    Monto = Valor_Propiedad − Pie
+</div>
+
+<h3>Paso 2: Tasa Mensual</h3>
+<div class="formula-box">
+    <span class="label">Conversión de tasa anual a mensual:</span>
+    r = Tasa_Anual / 100 / 12
+</div>
+<p>Ejemplo: Tasa anual 5% → r = 5 / 100 / 12 = <code>0.004167</code></p>
+
+<h3>Paso 3: Número de Cuotas</h3>
+<div class="formula-box">
+    <span class="label">Total de cuotas mensuales:</span>
+    n = Plazo_Años × 12
+</div>
+
+<h3>Paso 4: Cuota Mensual en UF</h3>
+<div class="formula-box">
+    <span class="label">Fórmula de amortización francesa:</span>
+    Cuota = Monto × [ r × (1 + r)ⁿ ] / [ (1 + r)ⁿ − 1 ]
+</div>
+
+<div class="note">
+    <strong>Nota:</strong> Esta es la fórmula estándar utilizada por todos los bancos chilenos para calcular créditos hipotecarios con tasa fija. El resultado se expresa en UF.
+</div>
+
+<h3>Paso 5: Cuota Mensual en CLP</h3>
+<div class="formula-box">
+    <span class="label">Conversión a pesos:</span>
+    Cuota_CLP = redondear(Cuota_UF × Valor_UF)
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="evaluacion">3. Evaluación de Crédito</h2>
+
+<h3>3.1 Carga Financiera Total</h3>
+<div class="formula-box">
+    <span class="label">Carga total mensual en pesos:</span>
+    Carga_Total = Cuota_CLP + Deudas_Vigentes_CLP
+</div>
+<p>Incluye la cuota hipotecaria más todas las deudas mensuales preexistentes (tarjetas, créditos de consumo, etc.).</p>
+
+<h3>3.2 Relación Cuota/Ingreso (Debt-to-Income)</h3>
+<div class="formula-box">
+    <span class="label">Porcentaje de carga sobre ingreso:</span>
+    Relación = (Carga_Total / Renta_Bruta_CLP) × 100
+</div>
+<p>Este indicador mide qué porcentaje del ingreso bruto se destina al pago de deudas totales (hipotecaria + vigentes).</p>
+
+<h3>3.3 Renta Mínima Requerida</h3>
+<div class="formula-box">
+    <span class="label">Ingreso mínimo para calificar:</span>
+    Renta_Mínima = Carga_Total / 0.25
+</div>
+<p>Es el ingreso bruto mínimo necesario para que la relación cuota/ingreso sea exactamente 25%.</p>
+
+<h3>3.4 Costo Total del Crédito</h3>
+<div class="formula-box">
+    <span class="label">Monto total pagado en UF:</span>
+    Costo_Total = Cuota_UF × n
+</div>
+<p>Representa el total de UF que se pagarán al banco durante toda la vida del crédito (capital + intereses).</p>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="umbral">4. Umbral de Aprobación</h2>
+
+<div class="threshold">
+    <strong>✅ CALIFICA</strong> si: Relación Cuota/Ingreso ≤ <span class="highlight">25%</span>
+</div>
+<div class="threshold-fail">
+    <strong>❌ NO CALIFICA</strong> si: Relación Cuota/Ingreso &gt; <span class="highlight">25%</span>
+</div>
+
+<table>
+    <tr><th>Criterio</th><th>Valor</th><th>Fundamento</th></tr>
+    <tr>
+        <td>Relación máxima cuota/ingreso</td>
+        <td><strong>25%</strong></td>
+        <td>Estándar conservador utilizado por la banca chilena. La CMF recomienda que la carga financiera total no supere el 25-30% del ingreso bruto.</td>
+    </tr>
+    <tr>
+        <td>Incluye deudas vigentes</td>
+        <td><strong>Sí</strong></td>
+        <td>La relación considera TODA la carga financiera (cuota hipotecaria + deudas preexistentes), no solo la cuota del nuevo crédito.</td>
+    </tr>
+    <tr>
+        <td>Base de ingreso</td>
+        <td><strong>Renta Bruta</strong></td>
+        <td>Se calcula sobre el ingreso bruto mensual (antes de descuentos legales).</td>
+    </tr>
+</table>
+
+<div class="note">
+    <strong>Referencia regulatoria:</strong> La Comisión para el Mercado Financiero (CMF) de Chile establece como buena práctica que la carga financiera total no supere el 25% para créditos hipotecarios. Algunos bancos permiten hasta 30% para clientes con buen perfil crediticio, pero este simulador usa el umbral conservador de 25%.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="validaciones">5. Validaciones de Negocio</h2>
+
+<table class="validation-table">
+    <tr><th>Validación</th><th>Regla</th><th>Resultado si falla</th></tr>
+    <tr><td>Pie &lt; Valor Propiedad</td><td>El enganche debe ser estrictamente menor al precio</td><td>Error de formulario, no se procesa</td></tr>
+    <tr><td>Monto Crédito &gt; 0</td><td>Si pie ≥ valor propiedad, monto ≤ 0</td><td>califica = False, monto = 0</td></tr>
+    <tr><td>Renta Bruta &gt; 0</td><td>Si renta = 0, no se puede dividir</td><td>Relación se fija en 100% → No Califica</td></tr>
+    <tr><td>Tasa &gt; 0</td><td>La tasa debe ser positiva para calcular</td><td>Cuota = 0 (fórmula retorna 0)</td></tr>
+    <tr><td>Plazo &gt; 0</td><td>El plazo debe ser al menos 1 año</td><td>Cuota = 0 (fórmula retorna 0)</td></tr>
+    <tr><td>Valor Propiedad &gt; 0.01</td><td>Debe ser un valor real</td><td>Error de formulario</td></tr>
+    <tr><td>Renta Bruta ≥ 1</td><td>Debe tener algún ingreso</td><td>Error de formulario</td></tr>
+    <tr><td>Deudas ≥ 0</td><td>No puede ser negativo</td><td>Error de formulario</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="ejemplo-califica">6. Ejemplo: Cliente que Califica</h2>
+
+<div class="example">
+    <h4>Datos de Entrada</h4>
+    <table>
+        <tr><td>Valor Propiedad</td><td>3.000 UF</td></tr>
+        <tr><td>Pie</td><td>600 UF (20%)</td></tr>
+        <tr><td>Plazo</td><td>20 años</td></tr>
+        <tr><td>Tasa Anual</td><td>5%</td></tr>
+        <tr><td>Renta Bruta</td><td>$2.500.000 CLP</td></tr>
+        <tr><td>Deudas Vigentes</td><td>$0 CLP</td></tr>
+        <tr><td>Valor UF</td><td>$38.000 CLP</td></tr>
+    </table>
+
+    <h4>Cálculos Paso a Paso</h4>
+    <table>
+        <tr><td>Monto Crédito</td><td>3.000 − 600 = <strong>2.400 UF</strong></td></tr>
+        <tr><td>Tasa mensual (r)</td><td>5 / 100 / 12 = <strong>0.004167</strong></td></tr>
+        <tr><td>Número de cuotas (n)</td><td>20 × 12 = <strong>240</strong></td></tr>
+        <tr><td>Cuota mensual UF</td><td>2400 × [0.004167 × 1.004167²⁴⁰] / [1.004167²⁴⁰ − 1] = <strong>15.8389 UF</strong></td></tr>
+        <tr><td>Cuota mensual CLP</td><td>15.8389 × 38.000 = <strong>$601.878 CLP</strong></td></tr>
+        <tr><td>Carga Total</td><td>$601.878 + $0 = <strong>$601.878 CLP</strong></td></tr>
+        <tr><td>Relación Cuota/Ingreso</td><td>601.878 / 2.500.000 × 100 = <strong>24.08%</strong></td></tr>
+        <tr><td>Renta Mínima Requerida</td><td>601.878 / 0.25 = <strong>$2.407.512 CLP</strong></td></tr>
+        <tr><td>Costo Total Crédito</td><td>15.8389 × 240 = <strong>3.801,34 UF</strong></td></tr>
+    </table>
+
+    <h4>Resultado</h4>
+    <p><span class="badge badge-ok">✓ CALIFICA</span> — 24.08% ≤ 25%</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="ejemplo-no-califica">7. Ejemplo: Cliente que No Califica</h2>
+
+<div class="example">
+    <h4>Datos de Entrada</h4>
+    <table>
+        <tr><td>Valor Propiedad</td><td>3.000 UF</td></tr>
+        <tr><td>Pie</td><td>600 UF (20%)</td></tr>
+        <tr><td>Plazo</td><td>20 años</td></tr>
+        <tr><td>Tasa Anual</td><td>5%</td></tr>
+        <tr><td>Renta Bruta</td><td>$1.500.000 CLP</td></tr>
+        <tr><td>Deudas Vigentes</td><td>$200.000 CLP</td></tr>
+        <tr><td>Valor UF</td><td>$38.000 CLP</td></tr>
+    </table>
+
+    <h4>Cálculos Paso a Paso</h4>
+    <table>
+        <tr><td>Monto Crédito</td><td>3.000 − 600 = <strong>2.400 UF</strong></td></tr>
+        <tr><td>Cuota mensual UF</td><td><strong>15.8389 UF</strong> (misma fórmula)</td></tr>
+        <tr><td>Cuota mensual CLP</td><td>15.8389 × 38.000 = <strong>$601.878 CLP</strong></td></tr>
+        <tr><td>Carga Total</td><td>$601.878 + $200.000 = <strong>$801.878 CLP</strong></td></tr>
+        <tr><td>Relación Cuota/Ingreso</td><td>801.878 / 1.500.000 × 100 = <strong>53.46%</strong></td></tr>
+        <tr><td>Renta Mínima Requerida</td><td>801.878 / 0.25 = <strong>$3.207.512 CLP</strong></td></tr>
+    </table>
+
+    <h4>Resultado</h4>
+    <p><span class="badge badge-fail">✗ NO CALIFICA</span> — 53.46% &gt; 25%</p>
+    <p>El cliente necesitaría una renta bruta de al menos <strong>$3.207.512 CLP</strong> para calificar con esta carga financiera.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="casos-borde">8. Casos Borde</h2>
+
+<table>
+    <tr><th>Caso</th><th>Comportamiento</th><th>Resultado</th></tr>
+    <tr>
+        <td>Pie = Valor Propiedad</td>
+        <td>Monto crédito = 0, no se necesita financiamiento</td>
+        <td>No Califica (no se genera crédito)</td>
+    </tr>
+    <tr>
+        <td>Pie &gt; Valor Propiedad</td>
+        <td>Monto negativo, se bloquea en formulario y en cálculo</td>
+        <td>Error de formulario / No Califica</td>
+    </tr>
+    <tr>
+        <td>Renta = 0</td>
+        <td>División por cero evitada, relación se fija en 100%</td>
+        <td>No Califica (100% &gt; 25%)</td>
+    </tr>
+    <tr>
+        <td>Deudas muy altas</td>
+        <td>Carga total sube, relación supera 25%</td>
+        <td>No Califica</td>
+    </tr>
+    <tr>
+        <td>Plazo muy corto (5 años)</td>
+        <td>Cuota más alta, relación puede superar 25%</td>
+        <td>Depende de la renta</td>
+    </tr>
+    <tr>
+        <td>Tasa muy alta</td>
+        <td>Cuota se eleva significativamente</td>
+        <td>Depende de la renta</td>
+    </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<h2 id="resumen">9. Resumen de Reglas</h2>
+
+<table>
+    <tr><th>#</th><th>Regla</th><th>Implementación</th></tr>
+    <tr><td>1</td><td>Sistema de amortización francesa (cuota fija)</td><td><code>calcular_cuota_mensual()</code></td></tr>
+    <tr><td>2</td><td>Umbral de aprobación: 25% de relación cuota/ingreso</td><td><code>califica = relacion <= 25.0</code></td></tr>
+    <tr><td>3</td><td>La carga incluye deudas vigentes + cuota hipotecaria</td><td><code>carga_total = cuota_clp + deudas_vigentes</code></td></tr>
+    <tr><td>4</td><td>Se calcula sobre renta BRUTA (no líquida)</td><td>Campo: renta_bruta_clp</td></tr>
+    <tr><td>5</td><td>El pie debe ser menor al valor de la propiedad</td><td>Validación en formulario + guard en cálculo</td></tr>
+    <tr><td>6</td><td>Valores en UF se convierten a CLP usando valor UF del día</td><td><code>cuota_clp = cuota_uf × valor_uf</code></td></tr>
+    <tr><td>7</td><td>Renta mínima = carga total / 0.25</td><td>Indica cuánto necesita ganar para calificar</td></tr>
+    <tr><td>8</td><td>Costo total = cuota mensual × total de cuotas</td><td>Suma simple, incluye capital + intereses</td></tr>
+</table>
+
+<div class="note" style="margin-top: 32px;">
+    <strong>Archivo fuente:</strong> Toda la lógica de cálculo está implementada en <code>calculadora/utils/calculations.py</code>.<br>
+    <strong>Validaciones de formulario:</strong> Implementadas en <code>calculadora/forms.py</code>.<br>
+    <strong>Última actualización:</strong> Mayo 2026.
+</div>
+
+</div>
+</body>
+</html>
