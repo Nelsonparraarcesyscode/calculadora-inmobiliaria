@@ -53,8 +53,7 @@ class CalculadoraForm(forms.Form):
         }),
         label="Tasa de Interés"
     )
-    renta_bruta_clp = forms.IntegerField(
-        min_value=1,
+    renta_bruta_clp = forms.CharField(
         widget=forms.TextInput(attrs={
             'class': 'form-input', 'placeholder': 'Ej: 1.500.000',
             'inputmode': 'numeric',
@@ -63,8 +62,8 @@ class CalculadoraForm(forms.Form):
         }),
         label="Renta Bruta Mensual ($CLP)"
     )
-    deudas_vigentes_clp = forms.IntegerField(
-        min_value=0, required=False, initial=0,
+    deudas_vigentes_clp = forms.CharField(
+        required=False,
         widget=forms.TextInput(attrs={
             'class': 'form-input', 'placeholder': 'Ej: 200.000',
             'inputmode': 'numeric',
