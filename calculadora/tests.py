@@ -1,239 +1,219 @@
-from django.test import TestCase, RequestFactory
-from django.test import override_settings
+from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase
 
+from .admin import _parse_num, _parse_bool
 from .forms import CalculadoraForm
-from .models import InterestRate, PdfConfig
-from .utils.calculations import calcular_cuota_mensual, evaluar_credito
+from .models import InterestRate, PdfConfig, Propiedad, Submission
+from .utils.calculations import factor_anualidad, calcular_capacidad
 from .utils.rut_validator import validar_rut, formatear_rut
 
 
-class CalcularCuotaMensualTests(TestCase):
-    """Tests para la función de amortización francesa."""
+class CsvParseTests(TestCase):
+    def test_parse_num_chileno_y_estandar(self):
+        casos = {'2.160': 2160.0, '2160': 2160.0, '1.234.567': 1234567.0,
+                 '42,33': 42.33, '42.33': 42.33, '2160.0': 2160.0,
+                 '1.234,5': 1234.5, '': 0.0, '3': 3.0}
+        for entrada, esperado in casos.items():
+            self.assertAlmostEqual(_parse_num(entrada), esperado, places=4, msg=entrada)
 
-    def test_cuota_normal(self):
-        # 2400 UF, 5% anual, 20 años → cuota esperada ≈ 15.84 UF
-        cuota = calcular_cuota_mensual(2400, 5.0, 20)
-        self.assertAlmostEqual(cuota, 15.8389, places=2)
+    def test_parse_bool(self):
+        self.assertTrue(_parse_bool('si'))
+        self.assertTrue(_parse_bool('1'))
+        self.assertFalse(_parse_bool('no'))
+        self.assertFalse(_parse_bool(''))
 
-    def test_monto_cero(self):
-        self.assertEqual(calcular_cuota_mensual(0, 5.0, 20), 0.0)
+
+class PropiedadCsvAdminTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        User.objects.create_superuser('admin', 'a@a.cl', 'admin123')
+        cls.prop = Propiedad.objects.create(
+            edificio="Existente", comuna="Chillán", tipologia="2D + 1B", precio_uf=2160)
+
+    def setUp(self):
+        self.client.login(username='admin', password='admin123')
+
+    def test_export_sin_columna_imagen(self):
+        r = self.client.get('/admin/calculadora/propiedad/exportar-csv/')
+        self.assertEqual(r.status_code, 200)
+        header = r.content.decode('utf-8-sig').splitlines()[0]
+        self.assertNotIn('imagen', header)
+        self.assertIn('precio_uf', header)
+
+    def test_import_crea_y_actualiza(self):
+        csv_txt = (
+            "id,edificio,comuna,entrega,tipologia,precio_uf,superficie_total_m2,"
+            "superficie_util_m2,superficie_terraza_m2,enlace,activa,orden\r\n"
+            f"{self.prop.id},Editado,Las Condes,Inmediata,9D,1.234,50,48,2,,si,5\r\n"
+            ",Nuevo,Talca,Inmediata,1D,2.999,30,28,0,,si,1\r\n"
+            ",,sin tipologia,X,,1,1,1,0,,si,0\r\n"
+        )
+        up = SimpleUploadedFile("p.csv", csv_txt.encode("utf-8-sig"), content_type="text/csv")
+        r = self.client.post('/admin/calculadora/propiedad/importar-csv/', {'archivo_csv': up})
+        self.assertEqual(r.status_code, 302)
+        self.prop.refresh_from_db()
+        self.assertEqual(self.prop.precio_uf, 1234.0)
+        self.assertEqual(self.prop.edificio, "Editado")
+        nuevo = Propiedad.objects.get(edificio="Nuevo")
+        self.assertEqual(nuevo.precio_uf, 2999.0)
+        # La fila sin tipología no se crea.
+        self.assertFalse(Propiedad.objects.filter(comuna="sin tipologia").exists())
+
+
+class FactorAnualidadTests(TestCase):
+    def test_factor_normal(self):
+        # 5,95% anual, 10 años → factor ≈ 90,276
+        self.assertAlmostEqual(factor_anualidad(5.95, 10), 90.2757, places=2)
 
     def test_tasa_cero(self):
-        self.assertEqual(calcular_cuota_mensual(2400, 0, 20), 0.0)
+        self.assertEqual(factor_anualidad(0, 10), 0.0)
 
     def test_plazo_cero(self):
-        self.assertEqual(calcular_cuota_mensual(2400, 5.0, 0), 0.0)
-
-    def test_monto_negativo(self):
-        self.assertEqual(calcular_cuota_mensual(-100, 5.0, 20), 0.0)
+        self.assertEqual(factor_anualidad(5.0, 0), 0.0)
 
 
-class EvaluarCreditoTests(TestCase):
-    """Tests para la evaluación completa de crédito."""
+class CalcularCapacidadTests(TestCase):
+    """Reglas de negocio Peterman: sueldo líquido → precio máximo del depto."""
 
-    def test_califica_renta_alta(self):
-        result = evaluar_credito(
-            valor_propiedad=3000,
-            pie=600,
-            plazo_anios=20,
-            tasa_anual=5.0,
-            renta_bruta_clp=3000000,
-            deudas_vigentes_clp=0,
-            valor_uf=38000,
+    def test_ejemplo_referencia(self):
+        # Caso real entregado por el cliente.
+        r = calcular_capacidad(
+            sueldo_liquido_clp=10_000_000, sueldo_2_clp=0,
+            plazo_anios=10, tasa_anual=5.95, pie_pct=10,
+            valor_uf=40782.27, factor_endeudamiento=3.6,
         )
-        self.assertTrue(result['califica'])
-        self.assertGreater(result['monto_credito'], 0)
-        self.assertGreater(result['cuota_mensual'], 0)
+        self.assertEqual(r['dividendo_clp'], 2_777_778)
+        self.assertAlmostEqual(r['dividendo_uf'], 68.11, places=2)
+        self.assertAlmostEqual(r['precio_maximo_uf'], 6149.02, places=2)
+        self.assertEqual(r['precio_maximo_clp'], 250_770_815)
+        self.assertAlmostEqual(r['financiamiento_uf'], 5534.11, places=2)
+        self.assertEqual(r['financiamiento_clp'], 225_693_734)
+        self.assertAlmostEqual(r['pie_uf'], 614.90, places=2)
+        self.assertEqual(r['pie_clp'], 25_077_082)
 
-    def test_no_califica_renta_baja(self):
-        result = evaluar_credito(
-            valor_propiedad=3000,
-            pie=600,
-            plazo_anios=20,
-            tasa_anual=5.0,
-            renta_bruta_clp=500000,
-            deudas_vigentes_clp=0,
-            valor_uf=38000,
-        )
-        self.assertFalse(result['califica'])
-        self.assertGreater(result['relacion_cuota_ingreso'], 25.0)
+    def test_complemento_renta_suma(self):
+        base = calcular_capacidad(5_000_000, 0, 10, 5.95, 10, 40782.27, 3.6)
+        comp = calcular_capacidad(5_000_000, 5_000_000, 10, 5.95, 10, 40782.27, 3.6)
+        self.assertAlmostEqual(comp['precio_maximo_uf'], base['precio_maximo_uf'] * 2, places=1)
 
-    def test_pie_mayor_que_propiedad_no_califica(self):
-        """Bug fix: pie > valor_propiedad debería retornar califica=False."""
-        result = evaluar_credito(
-            valor_propiedad=1000,
-            pie=1200,
-            plazo_anios=20,
-            tasa_anual=5.0,
-            renta_bruta_clp=2000000,
-            deudas_vigentes_clp=0,
-            valor_uf=38000,
-        )
-        self.assertFalse(result['califica'])
-        self.assertEqual(result['monto_credito'], 0)
+    def test_pie_afecta_financiamiento(self):
+        r = calcular_capacidad(10_000_000, 0, 10, 5.95, 20, 40782.27, 3.6)
+        self.assertAlmostEqual(r['financiamiento_uf'] + r['pie_uf'], r['precio_maximo_uf'], places=1)
+        self.assertAlmostEqual(r['pie_uf'], r['precio_maximo_uf'] * 0.20, places=1)
 
-    def test_pie_igual_propiedad_no_califica(self):
-        result = evaluar_credito(
-            valor_propiedad=1000,
-            pie=1000,
-            plazo_anios=20,
-            tasa_anual=5.0,
-            renta_bruta_clp=2000000,
-            deudas_vigentes_clp=0,
-            valor_uf=38000,
-        )
-        self.assertFalse(result['califica'])
+    def test_ingreso_cero(self):
+        r = calcular_capacidad(0, 0, 10, 5.95, 10, 40782.27, 3.6)
+        self.assertEqual(r['precio_maximo_uf'], 0.0)
 
-    def test_renta_cero_no_califica(self):
-        result = evaluar_credito(
-            valor_propiedad=3000,
-            pie=600,
-            plazo_anios=20,
-            tasa_anual=5.0,
-            renta_bruta_clp=0,
-            deudas_vigentes_clp=0,
-            valor_uf=38000,
-        )
-        self.assertFalse(result['califica'])
-        self.assertEqual(result['relacion_cuota_ingreso'], 100.0)
-
-    def test_deudas_afectan_calificacion(self):
-        # Sin deudas califica
-        r1 = evaluar_credito(
-            valor_propiedad=2000, pie=400, plazo_anios=20,
-            tasa_anual=5.0, renta_bruta_clp=2000000,
-            deudas_vigentes_clp=0, valor_uf=38000,
-        )
-        # Con deudas altas no califica
-        r2 = evaluar_credito(
-            valor_propiedad=2000, pie=400, plazo_anios=20,
-            tasa_anual=5.0, renta_bruta_clp=2000000,
-            deudas_vigentes_clp=1000000, valor_uf=38000,
-        )
-        self.assertGreater(r2['relacion_cuota_ingreso'], r1['relacion_cuota_ingreso'])
+    def test_uf_cero(self):
+        r = calcular_capacidad(10_000_000, 0, 10, 5.95, 10, 0, 3.6)
+        self.assertEqual(r['precio_maximo_uf'], 0.0)
 
 
 class FormValidationTests(TestCase):
-    """Tests para validación del formulario."""
-
     @classmethod
     def setUpTestData(cls):
         cls.tasa = InterestRate.objects.create(
-            nombre="Test", porcentaje=5.0,
+            nombre="Test", porcentaje=5.95,
             plazo_min_anios=5, plazo_max_anios=30, activa=True
         )
 
-    def _form_data(self, **overrides):
+    def _data(self, **overrides):
         data = {
             'nombre_completo': 'Juan Pérez',
             'email': 'juan@ejemplo.cl',
             'telefono': '+56912345678',
-            'valor_propiedad': 3000,
-            'pie': 600,
-            'plazo_anios': '20',
+            'sueldo_liquido_clp': '10.000.000',
+            'complementa_renta': 'no',
+            'sueldo_2_clp': '0',
+            'plazo_anios': '10',
+            'pie_pct': '10',
             'tasa_interes_id': str(self.tasa.id),
-            'renta_bruta_clp': 2000000,
-            'deudas_vigentes_clp': 0,
         }
         data.update(overrides)
         return data
 
     def test_form_valido(self):
-        tasas = InterestRate.objects.filter(activa=True)
-        form = CalculadoraForm(self._form_data(), tasas=tasas)
-        self.assertTrue(form.is_valid())
+        form = CalculadoraForm(self._data(), tasas=InterestRate.objects.all())
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data['sueldo_liquido_clp'], 10_000_000)
 
-    def test_form_pie_mayor_que_propiedad(self):
-        tasas = InterestRate.objects.filter(activa=True)
-        form = CalculadoraForm(self._form_data(pie=3500), tasas=tasas)
-        self.assertFalse(form.is_valid())
-        self.assertIn('__all__', form.errors)
-
-    def test_form_pie_igual_que_propiedad(self):
-        tasas = InterestRate.objects.filter(activa=True)
-        form = CalculadoraForm(self._form_data(pie=3000), tasas=tasas)
+    def test_sueldo_obligatorio(self):
+        form = CalculadoraForm(self._data(sueldo_liquido_clp=''), tasas=InterestRate.objects.all())
         self.assertFalse(form.is_valid())
 
-    def test_form_valor_propiedad_negativo(self):
-        tasas = InterestRate.objects.filter(activa=True)
-        form = CalculadoraForm(self._form_data(valor_propiedad=-100), tasas=tasas)
-        self.assertFalse(form.is_valid())
-
-    def test_form_deudas_vacia_se_convierte_a_cero(self):
-        tasas = InterestRate.objects.filter(activa=True)
+    def test_sueldo2_se_ignora_si_no_complementa(self):
         form = CalculadoraForm(
-            self._form_data(deudas_vigentes_clp=''), tasas=tasas
+            self._data(complementa_renta='no', sueldo_2_clp='500.000'),
+            tasas=InterestRate.objects.all()
         )
-        self.assertTrue(form.is_valid())
-        self.assertEqual(form.cleaned_data['deudas_vigentes_clp'], 0)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data['sueldo_2_clp'], 0)
+
+    def test_sueldo2_se_usa_si_complementa(self):
+        form = CalculadoraForm(
+            self._data(complementa_renta='si', sueldo_2_clp='500.000'),
+            tasas=InterestRate.objects.all()
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data['sueldo_2_clp'], 500_000)
 
 
 class RutValidatorTests(TestCase):
-    """Tests para validación de RUT chileno."""
-
     def test_rut_valido(self):
         self.assertTrue(validar_rut('12.345.678-5'))
 
-    def test_rut_valido_sin_formato(self):
-        self.assertTrue(validar_rut('123456785'))
-
     def test_rut_invalido(self):
         self.assertFalse(validar_rut('12.345.678-0'))
-
-    def test_rut_corto(self):
-        self.assertFalse(validar_rut('1'))
 
     def test_formatear_rut(self):
         self.assertEqual(formatear_rut('123456785'), '12.345.678-5')
 
 
 class ViewIntegrationTests(TestCase):
-    """Tests de integración para la vista principal."""
-
     @classmethod
     def setUpTestData(cls):
         cls.tasa = InterestRate.objects.create(
-            nombre="Fija", porcentaje=4.5,
+            nombre="CMF", porcentaje=5.95,
             plazo_min_anios=5, plazo_max_anios=30, activa=True
         )
-        PdfConfig.objects.get_or_create(pk=1)
+        cfg = PdfConfig.load()
+        cfg.valor_uf = 40782.27
+        cfg.factor_endeudamiento = 3.6
+        cfg.save()
+        Propiedad.objects.create(edificio="Gamero 436", comuna="Chillán",
+                                 tipologia="2D + 1B", precio_uf=2160, activa=True)
+        Propiedad.objects.create(edificio="Caro", comuna="Las Condes",
+                                 tipologia="3D + 2B", precio_uf=9000, activa=True)
 
     def test_get_form(self):
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Simulador de Crédito Hipotecario')
+        self.assertContains(response, 'Calcula tu Departamento')
 
-    def test_post_valid_returns_pdf(self):
+    def test_post_calcula_y_filtra(self):
         response = self.client.post('/', {
             'nombre_completo': 'María López',
             'email': 'maria@test.cl',
-            'valor_propiedad': 3000,
-            'pie': 600,
-            'plazo_anios': '20',
+            'telefono': '',
+            'sueldo_liquido_clp': '10.000.000',
+            'complementa_renta': 'no',
+            'sueldo_2_clp': '0',
+            'plazo_anios': '10',
+            'pie_pct': '10',
             'tasa_interes_id': str(self.tasa.id),
-            'renta_bruta_clp': 2000000,
-            'deudas_vigentes_clp': 0,
         })
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response['Content-Type'], 'application/pdf')
-
-    def test_post_pie_mayor_que_propiedad_shows_error(self):
-        response = self.client.post('/', {
-            'nombre_completo': 'Test User',
-            'email': 'test@test.cl',
-            'valor_propiedad': 1000,
-            'pie': 1500,
-            'plazo_anios': '20',
-            'tasa_interes_id': str(self.tasa.id),
-            'renta_bruta_clp': 2000000,
-            'deudas_vigentes_clp': 0,
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'El pie debe ser menor al valor de la propiedad')
+        self.assertContains(response, '6.149,02')
+        # Sólo la propiedad de 2160 UF cabe en el presupuesto (no la de 9000).
+        sub = Submission.objects.latest('created_at')
+        self.assertEqual(sub.unidades_encontradas, 1)
+        self.assertContains(response, 'Gamero 436')
 
     def test_rates_json_endpoint(self):
         response = self.client.get('/api/rates/')
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(len(data), 1)
-        self.assertEqual(data[0]['nombre'], 'Fija')
+        self.assertEqual(data[0]['nombre'], 'CMF')

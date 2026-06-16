@@ -1,24 +1,104 @@
 {% extends "calculadora/base.html" %}
+{% load formato %}
 
 {% block content %}
 <div class="container" x-data="calculadora()">
-    <div class="card">
-        <div class="card-header">
-            <h1>Simulador de Crédito Hipotecario</h1>
-            <p>Evalúa tu capacidad de crédito para adquirir un bien inmueble en Chile</p>
+
+    <div class="calc-header">
+        <h1>Calcula tu Departamento</h1>
+        <p>Si quieres comprar tu primera vivienda o deseas invertir, te dejamos nuestra CALCULADORA
+           para que SIMULES EN CUATRO PASOS el valor máximo referencia del departamento que podrías comprar.</p>
+    </div>
+
+    <form method="post" @submit="submitting = true">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="errorlist" style="background:#fef2f2; border:1px solid var(--color-no-califica); border-radius:8px; padding:12px; margin-top:16px;">
+            {{ form.non_field_errors }}
+        </div>
+        {% endif %}
+
+        <!-- Primer Paso -->
+        <div class="step">
+            <div class="step-eyebrow">Primer Paso</div>
+            <div class="step-title">Mi Sueldo Líquido es de</div>
+            <div class="step-help">Es tu sueldo o ingresos mensuales estables y acreditables como dependiente o
+                independiente, con un bajo nivel de endeudamiento.</div>
+
+            <div class="form-group {% if form.sueldo_liquido_clp.errors %}field-error{% endif %}">
+                <div class="input-money">
+                    <span class="peso">$</span>
+                    {{ form.sueldo_liquido_clp }}
+                </div>
+                {{ form.sueldo_liquido_clp.errors }}
+            </div>
+
+            <div class="inline-renta">
+                <span class="q">¿Quieres complementar renta?</span>
+                <div class="radio-row">
+                    <label><input type="radio" name="complementa_renta" value="no" x-model="complementaRenta"> NO</label>
+                    <label><input type="radio" name="complementa_renta" value="si" x-model="complementaRenta"> SI</label>
+                </div>
+                <template x-if="complementaRenta === 'si'">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span class="q">Sueldo número 2</span>
+                        <div class="input-money" style="min-width:200px;">
+                            <span class="peso">$</span>
+                            {{ form.sueldo_2_clp }}
+                        </div>
+                    </div>
+                </template>
+            </div>
         </div>
 
-        <form method="post" @submit="submitting = true">
-            {% csrf_token %}
-
-            {% if form.non_field_errors %}
-            <div class="errorlist" style="background:#fef2f2; border:1px solid #dc2626; border-radius:8px; padding:12px; margin-bottom:16px;">
-                {{ form.non_field_errors }}
+        <!-- Segundo y Tercer Paso -->
+        <div class="step-grid">
+            <div class="step">
+                <div class="step-eyebrow">Segundo Paso</div>
+                <div class="step-title">Plazo para pagar mi dpto</div>
+                <div class="step-help">Plazo en años durante los cuales quieres pagar tu Depto con un crédito hipotecario.</div>
+                <div class="form-group {% if form.plazo_anios.errors %}field-error{% endif %}">
+                    {{ form.plazo_anios }}
+                    {{ form.plazo_anios.errors }}
+                </div>
             </div>
-            {% endif %}
+            <div class="step">
+                <div class="step-eyebrow">Tercer Paso</div>
+                <div class="step-title">Mi ahorro para el pie</div>
+                <div class="step-help">Es el porcentaje del valor total que debes tener antes de comprar la vivienda,
+                    y que será exigido por el banco para otorgar el crédito hipotecario.</div>
+                <div class="form-group {% if form.pie_pct.errors %}field-error{% endif %}">
+                    {{ form.pie_pct }}
+                    {{ form.pie_pct.errors }}
+                </div>
+            </div>
+        </div>
 
-            <p class="section-title">Datos de Contacto</p>
-            <div class="form-row">
+        <!-- Cuarto Paso -->
+        <div class="step">
+            <div class="step-eyebrow">Cuarto Paso</div>
+            <div class="step-title">Tasa menor informada</div>
+            <div class="step-help">Tasa menor variable informada por la CMF para los créditos hipotecarios.
+                Te recomendamos probar variantes entre 3,60 y 5,10.</div>
+            <div class="form-group {% if form.tasa_interes_id.errors %}field-error{% endif %}">
+                {{ form.tasa_interes_id }}
+                {{ form.tasa_interes_id.errors }}
+            </div>
+        </div>
+
+        <!-- Preview en vivo del precio máximo -->
+        <div class="live-precio" x-show="precioMaximoUF > 0" x-cloak x-transition>
+            <div class="lbl">El precio del Depto que podrías adquirir es de</div>
+            <div class="uf" x-text="'UF ' + formatNum(precioMaximoUF, 2)"></div>
+            <div class="clp" x-text="formatCLP(precioMaximoCLP)"></div>
+        </div>
+
+        <!-- Datos de contacto -->
+        <div class="step">
+            <div class="step-eyebrow">Para ver tus resultados</div>
+            <div class="step-title">Tus datos de contacto</div>
+            <div class="step-grid" style="margin-top:6px;">
                 <div class="form-group {% if form.nombre_completo.errors %}field-error{% endif %}">
                     <label for="id_nombre_completo">Nombre Completo <span class="required">*</span></label>
                     {{ form.nombre_completo }}
@@ -29,99 +109,107 @@
                     {{ form.email }}
                     {{ form.email.errors }}
                 </div>
-            </div>
-            <div class="form-row">
                 <div class="form-group {% if form.telefono.errors %}field-error{% endif %}">
                     <label for="id_telefono">Teléfono</label>
                     {{ form.telefono }}
                     {{ form.telefono.errors }}
                 </div>
-                <div></div>
             </div>
+        </div>
 
-            <p class="section-title">Datos del Crédito</p>
-            <div class="form-row">
-                <div class="form-group {% if form.valor_propiedad.errors %}field-error{% endif %}">
-                    <label for="id_valor_propiedad">Valor de la Propiedad (UF)</label>
-                    {{ form.valor_propiedad }}
-                    {{ form.valor_propiedad.errors }}
-                </div>
-                <div class="form-group {% if form.pie.errors %}field-error{% endif %}">
-                    <label for="id_pie">Pie / Enganche (UF)</label>
-                    {{ form.pie }}
-                    {{ form.pie.errors }}
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group {% if form.tasa_interes_id.errors %}field-error{% endif %}">
-                    <label for="id_tasa_interes_id">Tasa de Interés</label>
-                    {{ form.tasa_interes_id }}
-                    {{ form.tasa_interes_id.errors }}
-                </div>
-                <div class="form-group {% if form.plazo_anios.errors %}field-error{% endif %}">
-                    <label for="id_plazo_anios">Plazo del Crédito</label>
-                    {{ form.plazo_anios }}
-                    {{ form.plazo_anios.errors }}
-                </div>
-            </div>
+        <button type="submit" class="btn-submit" :disabled="submitting">
+            <span x-show="!submitting">Calcular y ver propiedades</span>
+            <span x-show="submitting">Calculando...</span>
+        </button>
+    </form>
 
-            <p class="section-title">Datos Financieros</p>
-            <div class="form-row">
-                <div class="form-group {% if form.renta_bruta_clp.errors %}field-error{% endif %}">
-                    <label for="id_renta_bruta_clp">Renta Bruta Mensual ($CLP)</label>
-                    {{ form.renta_bruta_clp }}
-                    {{ form.renta_bruta_clp.errors }}
-                </div>
-                <div class="form-group {% if form.deudas_vigentes_clp.errors %}field-error{% endif %}">
-                    <label for="id_deudas_vigentes_clp">Deudas Vigentes Mensuales ($CLP)</label>
-                    {{ form.deudas_vigentes_clp }}
-                    {{ form.deudas_vigentes_clp.errors }}
-                </div>
-            </div>
+    {% if resultado %}
+    <!-- Resultados (tras enviar) -->
+    <div class="step" id="resultados" style="margin-top:28px;">
+        <div class="step-eyebrow">Elige tu Departamento</div>
+        <div class="step-title">Tu simulación nos entregó los siguientes datos</div>
 
-            <!-- Preview en vivo -->
-            <div class="preview-box" x-show="mostrarPreview" x-cloak x-transition>
-                <h3>Vista Previa de tu Evaluación</h3>
-                <div class="preview-row">
-                    <span class="label">Monto del Crédito</span>
-                    <span class="value" x-text="formatUF(montoCredito)"></span>
-                </div>
-                <div class="preview-row">
-                    <span class="label">Cuota Mensual Estimada</span>
-                    <span class="value" x-text="formatUF(cuotaMensualUF) + '  (' + formatCLP(cuotaMensualCLP) + ')'"></span>
-                </div>
-                <div class="preview-row">
-                    <span class="label">Relación Cuota/Ingreso</span>
-                    <span class="value"
-                          :style="'color:' + (relacionCI <= 25 ? colorCalifica : colorNoCalifica)"
-                          x-text="relacionCI.toFixed(2) + '%'"></span>
-                </div>
-                <div class="preview-row">
-                    <span class="label">Renta Mínima Requerida</span>
-                    <span class="value" x-text="formatCLP(rentaMinima)"></span>
-                </div>
-                <div class="preview-row">
-                    <span class="label">Costo Total del Crédito</span>
-                    <span class="value" x-text="formatUF(costoTotal)"></span>
-                </div>
-                <div style="text-align: center;">
-                    <span class="result-badge"
-                          :class="relacionCI <= 25 ? 'califica' : 'no-califica'"
-                          x-text="relacionCI <= 25 ? '✓ CALIFICA' : '✗ NO CALIFICA'">
-                    </span>
-                </div>
-            </div>
+        <table class="result-table">
+            <thead>
+                <tr><th>Variable</th><th>UF</th><th>$</th><th>%</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>El precio máximo del Depto que podrías adquirir es de</td>
+                    <td>{{ resultado.precio_maximo_uf|miles:2 }}</td>
+                    <td>{{ resultado.precio_maximo_clp|miles }}</td>
+                    <td>100%</td>
+                </tr>
+                <tr>
+                    <td>Podrías obtener de tu banco un financiamiento aprox de</td>
+                    <td>{{ resultado.financiamiento_uf|miles:2 }}</td>
+                    <td>{{ resultado.financiamiento_clp|miles }}</td>
+                    <td>{{ financiamiento_pct|floatformat:0 }}%</td>
+                </tr>
+                <tr>
+                    <td>Siempre y cuando tengas un pie o ahorro de</td>
+                    <td>{{ resultado.pie_uf|miles:2 }}</td>
+                    <td>{{ resultado.pie_clp|miles }}</td>
+                    <td>{{ submission.pie_pct|floatformat:0 }}%</td>
+                </tr>
+                <tr>
+                    <td>Dividendo mensual aproximado de</td>
+                    <td>{{ resultado.dividendo_uf|miles:2 }}</td>
+                    <td>{{ resultado.dividendo_clp|miles }}</td>
+                    <td></td>
+                </tr>
+            </tbody>
+        </table>
 
-            <button type="submit" class="btn-submit" :disabled="submitting">
-                <span x-show="!submitting">Evaluar y Descargar PDF</span>
-                <span x-show="submitting">Generando evaluación...</span>
-            </button>
-        </form>
+        <p class="result-note">
+            Cálculo en base a Sueldo líquido: ${{ submission.sueldo_liquido_clp|miles }}
+            {% if submission.complementa_renta %}(+ ${{ submission.sueldo_2_clp|miles }}){% endif %}
+            · Plazo: {{ submission.plazo_anios }} Años · Tasa: {{ submission.tasa_interes }}.<br>
+            Esta simulación toma como criterios el valor del día de la UF (${{ submission.valor_uf|miles:2 }}), obtenida desde el SII.cl.
+            Tu capacidad de endeudamiento se calcula en base a tu sueldo líquido y la información entregada por la CMF en
+            <a href="https://www.clientebancario.cl" target="_blank">www.clientebancario.cl</a>.
+            Esta simulación no incluye los gastos operacionales de venta, que podrían corresponder aproximadamente a un 1,5%
+            del monto a financiar. Variará dependiendo de la tasa y la institución financiera en la que cotices tu crédito hipotecario.
+        </p>
     </div>
 
-    <div style="text-align:center; padding: 8px; font-size: 0.75rem; color: #a0aec0;">
-        Valor UF utilizado: <span x-text="formatCLP(valorUF)"></span>
+    <div class="felicidades">
+        {% if propiedades %}
+            ¡Felicidades! Hemos encontrado {{ submission.unidades_encontradas }} unidad{{ submission.unidades_encontradas|pluralize:"es" }} con tu simulación
+        {% else %}
+            Aún no tenemos unidades dentro de tu presupuesto, ¡pero contáctanos!
+        {% endif %}
     </div>
+
+    {% if propiedades %}
+    <div class="grid-props">
+        {% for p in propiedades %}
+        <div class="prop-card">
+            {% if p.imagen %}
+                <img src="{{ p.imagen.url }}" alt="{{ p.edificio }}">
+            {% else %}
+                <div class="prop-noimg">{{ p.edificio }}</div>
+            {% endif %}
+            <div class="prop-body">
+                <div class="prop-edificio">{{ p.edificio }}</div>
+                <div class="prop-tipo">{{ p.tipologia }}</div>
+                <div class="prop-comuna">{{ p.comuna }} · {{ p.entrega }}</div>
+                <div class="prop-data">
+                    <div class="row"><span>Superficie Total</span><span>{{ p.superficie_total_m2|floatformat:2 }} m²</span></div>
+                    <div class="row"><span>Superficie Útil</span><span>{{ p.superficie_util_m2|floatformat:2 }} m²</span></div>
+                    <div class="row"><span>Superficie Terraza</span><span>{{ p.superficie_terraza_m2|floatformat:2 }} m²</span></div>
+                </div>
+                <div class="prop-precio">UF {{ p.precio_uf|miles }}</div>
+                {% if p.enlace %}
+                <a class="prop-btn" href="{{ p.enlace }}" target="_blank" rel="noopener">Me interesa</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endif %}
+
 </div>
 {% endblock %}
 
@@ -133,24 +221,18 @@ function calculadora() {
     return {
         tasas: {{ tasas_json|safe }},
         valorUF: {{ valor_uf }},
-        colorCalifica: '{{ config.form_color_califica|default:"#16a34a" }}',
-        colorNoCalifica: '{{ config.form_color_no_califica|default:"#dc2626" }}',
-        valorPropiedad: 0,
-        pie: 0,
-        plazoAnios: 20,
+        factor: {{ factor_endeudamiento }},
+        sueldoLiquido: 0,
+        sueldo2: 0,
+        complementaRenta: 'no',
+        plazoAnios: 10,
+        piePct: {{ pie_pct_default|default:10 }},
         tasaInteresId: '',
         tasaPorcentaje: 0,
-        rentaBrutaCLP: 0,
-        deudasVigentesCLP: 0,
-        rentaBrutaDisplay: '',
-        deudasVigentesDisplay: '',
-        montoCredito: 0,
-        cuotaMensualUF: 0,
-        cuotaMensualCLP: 0,
-        relacionCI: 0,
-        rentaMinima: 0,
-        costoTotal: 0,
-        mostrarPreview: false,
+        sueldoDisplay: '',
+        sueldo2Display: '',
+        precioMaximoUF: 0,
+        precioMaximoCLP: 0,
         submitting: false,
 
         init() {
@@ -158,9 +240,8 @@ function calculadora() {
                 this.tasaInteresId = this.tasas[0].id.toString();
                 this.tasaPorcentaje = this.tasas[0].porcentaje;
             }
-            this.$watch('valorPropiedad', () => this.calcular());
-            this.$watch('pie', () => this.calcular());
-            this.$watch('plazoAnios', () => this.calcular());
+            this.$watch('complementaRenta', () => this.calcular());
+            this.calcular();
         },
 
         formatMiles(num) {
@@ -168,24 +249,19 @@ function calculadora() {
             return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
         },
 
-        parseMiles(str) {
-            if (!str) return 0;
-            return parseInt(str.replace(/\./g, ''), 10) || 0;
-        },
-
-        onRentaInput($event) {
+        onSueldoInput($event) {
             let raw = $event.target.value.replace(/[^\d]/g, '');
-            this.rentaBrutaCLP = parseInt(raw, 10) || 0;
-            this.rentaBrutaDisplay = this.formatMiles(this.rentaBrutaCLP);
-            this.$nextTick(() => { $event.target.value = this.rentaBrutaDisplay; });
+            this.sueldoLiquido = parseInt(raw, 10) || 0;
+            this.sueldoDisplay = this.formatMiles(this.sueldoLiquido);
+            this.$nextTick(() => { $event.target.value = this.sueldoDisplay; });
             this.calcular();
         },
 
-        onDeudasInput($event) {
+        onSueldo2Input($event) {
             let raw = $event.target.value.replace(/[^\d]/g, '');
-            this.deudasVigentesCLP = parseInt(raw, 10) || 0;
-            this.deudasVigentesDisplay = this.formatMiles(this.deudasVigentesCLP);
-            this.$nextTick(() => { $event.target.value = this.deudasVigentesDisplay; });
+            this.sueldo2 = parseInt(raw, 10) || 0;
+            this.sueldo2Display = this.formatMiles(this.sueldo2);
+            this.$nextTick(() => { $event.target.value = this.sueldo2Display; });
             this.calcular();
         },
 
@@ -196,37 +272,23 @@ function calculadora() {
         },
 
         calcular() {
-            const P = this.valorPropiedad - this.pie;
-            this.montoCredito = Math.max(P, 0);
-
-            if (P <= 0 || this.tasaPorcentaje <= 0 || this.plazoAnios <= 0) {
-                this.cuotaMensualUF = 0;
-                this.cuotaMensualCLP = 0;
-                this.relacionCI = 0;
-                this.rentaMinima = 0;
-                this.costoTotal = 0;
-                this.mostrarPreview = false;
+            const ingreso = this.sueldoLiquido + (this.complementaRenta === 'si' ? this.sueldo2 : 0);
+            if (ingreso <= 0 || this.tasaPorcentaje <= 0 || this.plazoAnios <= 0 || this.valorUF <= 0 || this.factor <= 0) {
+                this.precioMaximoUF = 0;
+                this.precioMaximoCLP = 0;
                 return;
             }
-
+            const dividendoCLP = ingreso / this.factor;
+            const dividendoUF = dividendoCLP / this.valorUF;
             const r = this.tasaPorcentaje / 100 / 12;
             const n = this.plazoAnios * 12;
-            this.cuotaMensualUF = P * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
-            this.cuotaMensualCLP = Math.round(this.cuotaMensualUF * this.valorUF);
-
-            const cargaTotal = this.cuotaMensualCLP + (this.deudasVigentesCLP || 0);
-            this.relacionCI = this.rentaBrutaCLP > 0
-                ? cargaTotal / this.rentaBrutaCLP * 100
-                : 100;
-
-            this.rentaMinima = Math.round(cargaTotal / 0.25);
-            this.costoTotal = this.cuotaMensualUF * n;
-
-            this.mostrarPreview = this.cuotaMensualCLP > 0 && this.rentaBrutaCLP > 0;
+            const factorAnualidad = (1 - Math.pow(1 + r, -n)) / r;
+            this.precioMaximoUF = dividendoUF * factorAnualidad;
+            this.precioMaximoCLP = this.precioMaximoUF * this.valorUF;
         },
 
-        formatUF(value) {
-            return value.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' UF';
+        formatNum(value, dec) {
+            return value.toLocaleString('es-CL', { minimumFractionDigits: dec, maximumFractionDigits: dec });
         },
 
         formatCLP(value) {

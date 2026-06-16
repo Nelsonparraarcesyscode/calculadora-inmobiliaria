@@ -1,9 +1,46 @@
 import csv
-from django.contrib import admin
+import io
+from django.contrib import admin, messages
 from django.http import HttpResponse
-from django.urls import path, reverse
+from django.shortcuts import redirect, render
+from django.urls import path
 from django.utils.html import format_html
-from .models import Submission, InterestRate, PdfConfig
+from .models import Submission, InterestRate, Propiedad, PdfConfig
+
+
+# Columnas del CSV de propiedades (sin imágenes).
+PROPIEDAD_CSV_FIELDS = [
+    'id', 'edificio', 'comuna', 'entrega', 'tipologia', 'precio_uf',
+    'superficie_total_m2', 'superficie_util_m2', 'superficie_terraza_m2',
+    'enlace', 'activa', 'orden',
+]
+
+
+def _parse_num(value):
+    """Acepta '2.160', '2160', '1.234.567', '42,33' o '42.33' y devuelve float.
+
+    Reglas de desambiguación (formato chileno vs estándar):
+      - Si hay coma -> la coma es el decimal y los puntos son miles. ('1.234,5' -> 1234.5)
+      - Sólo puntos: 2+ puntos -> todos son miles. ('1.234.567' -> 1234567)
+        1 punto con 3 dígitos tras él -> es separador de miles. ('2.160' -> 2160)
+        1 punto con otra cantidad de dígitos -> es decimal. ('42.33' -> 42.33, '2160.0' -> 2160)
+    """
+    s = str(value).strip()
+    if s == '':
+        return 0.0
+    if ',' in s:
+        return float(s.replace('.', '').replace(',', '.'))
+    if s.count('.') > 1:
+        return float(s.replace('.', ''))
+    if s.count('.') == 1:
+        entero, frac = s.split('.')
+        if len(frac) == 3:  # patrón de miles: 2.160
+            return float(entero + frac)
+    return float(s)
+
+
+def _parse_bool(value):
+    return str(value).strip().lower() in ('1', 'true', 'si', 'sí', 'yes', 'x', 'activa')
 
 
 def exportar_csv(modeladmin, request, queryset):
@@ -13,41 +50,169 @@ def exportar_csv(modeladmin, request, queryset):
     writer = csv.writer(response)
     writer.writerow([
         'Fecha', 'Nombre', 'Email', 'Teléfono',
-        'Valor Propiedad (UF)', 'Pie (UF)', 'Monto Crédito (UF)',
-        'Plazo (años)', 'Tasa (%)', 'Renta Bruta (CLP)', 'Deudas (CLP)',
-        'Cuota Mensual (UF)', 'Cuota Mensual (CLP)',
-        'Relación Cuota/Ingreso (%)', 'Califica'
+        'Sueldo Líquido (CLP)', 'Complementa', 'Sueldo 2 (CLP)',
+        'Plazo (años)', 'Pie (%)', 'Tasa (%)',
+        'Precio Máximo (UF)', 'Precio Máximo (CLP)',
+        'Financiamiento (UF)', 'Pie (UF)', 'Dividendo (UF)', 'Dividendo (CLP)',
+        'Unidades Encontradas'
     ])
     for s in queryset:
         writer.writerow([
             s.created_at.strftime('%d/%m/%Y %H:%M'),
             s.nombre_completo, s.email, s.telefono,
-            s.valor_propiedad, s.pie, s.monto_credito,
-            s.plazo_anios, s.tasa_interes, s.renta_bruta_clp, s.deudas_vigentes_clp,
-            s.cuota_mensual, s.cuota_mensual_clp,
-            s.relacion_cuota_ingreso,
-            'Sí' if s.califica else 'No'
+            s.sueldo_liquido_clp, 'Sí' if s.complementa_renta else 'No', s.sueldo_2_clp,
+            s.plazo_anios, s.pie_pct, s.tasa_interes,
+            s.precio_maximo_uf, s.precio_maximo_clp,
+            s.financiamiento_uf, s.pie_uf, s.dividendo_uf, s.dividendo_clp,
+            s.unidades_encontradas
         ])
     return response
 
 exportar_csv.short_description = "Exportar seleccionados a CSV"
 
 
+def exportar_propiedades_csv(modeladmin, request, queryset):
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="propiedades.csv"'
+    response.write('﻿')  # BOM para Excel
+    writer = csv.writer(response)
+    writer.writerow(PROPIEDAD_CSV_FIELDS)
+    for p in queryset:
+        writer.writerow([
+            p.id, p.edificio, p.comuna, p.entrega, p.tipologia, p.precio_uf,
+            p.superficie_total_m2, p.superficie_util_m2, p.superficie_terraza_m2,
+            p.enlace, 'si' if p.activa else 'no', p.orden,
+        ])
+    return response
+
+exportar_propiedades_csv.short_description = "Exportar seleccionadas a CSV (sin imágenes)"
+
+
+@admin.register(Propiedad)
+class PropiedadAdmin(admin.ModelAdmin):
+    list_display = ['miniatura', 'edificio', 'tipologia', 'comuna',
+                    'precio_uf', 'superficie_total_m2', 'activa', 'orden']
+    list_editable = ['precio_uf', 'activa', 'orden']
+    list_filter = ['activa', 'comuna', 'entrega']
+    search_fields = ['edificio', 'comuna', 'tipologia']
+    list_per_page = 30
+    actions = [exportar_propiedades_csv]
+    change_list_template = 'admin/calculadora/propiedad/change_list.html'
+
+    fieldsets = (
+        ('Proyecto', {
+            'fields': ('edificio', 'comuna', 'entrega', 'tipologia', 'precio_uf')
+        }),
+        ('Superficies (m²)', {
+            'fields': ('superficie_total_m2', 'superficie_util_m2', 'superficie_terraza_m2')
+        }),
+        ('Imagen y enlace', {
+            'fields': ('imagen', 'enlace')
+        }),
+        ('Publicación', {
+            'fields': ('activa', 'orden')
+        }),
+    )
+
+    def miniatura(self, obj):
+        if obj.imagen:
+            return format_html(
+                '<img src="{}" style="height:42px;width:60px;object-fit:cover;border-radius:4px;" />',
+                obj.imagen.url
+            )
+        return "—"
+    miniatura.short_description = "Imagen"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path('importar-csv/', self.admin_site.admin_view(self.importar_csv_view),
+                 name='calculadora_propiedad_importar_csv'),
+            path('exportar-csv/', self.admin_site.admin_view(self.exportar_todo_csv_view),
+                 name='calculadora_propiedad_exportar_csv'),
+        ]
+        return custom + urls
+
+    def exportar_todo_csv_view(self, request):
+        return exportar_propiedades_csv(self, request, Propiedad.objects.all())
+
+    def importar_csv_view(self, request):
+        if request.method == 'POST':
+            archivo = request.FILES.get('archivo_csv')
+            if not archivo:
+                self.message_user(request, "Debes seleccionar un archivo CSV.", level=messages.ERROR)
+                return redirect('..')
+            try:
+                texto = archivo.read().decode('utf-8-sig')
+            except UnicodeDecodeError:
+                texto = archivo.read().decode('latin-1')
+            reader = csv.DictReader(io.StringIO(texto))
+
+            creadas, actualizadas, errores = 0, 0, []
+            for i, row in enumerate(reader, start=2):
+                try:
+                    campos = {
+                        'edificio': (row.get('edificio') or '').strip(),
+                        'comuna': (row.get('comuna') or '').strip(),
+                        'entrega': (row.get('entrega') or 'Entrega Inmediata').strip(),
+                        'tipologia': (row.get('tipologia') or '').strip(),
+                        'precio_uf': _parse_num(row.get('precio_uf')),
+                        'superficie_total_m2': _parse_num(row.get('superficie_total_m2')),
+                        'superficie_util_m2': _parse_num(row.get('superficie_util_m2')),
+                        'superficie_terraza_m2': _parse_num(row.get('superficie_terraza_m2')),
+                        'enlace': (row.get('enlace') or '').strip(),
+                        'activa': _parse_bool(row.get('activa') or 'si'),
+                        'orden': int(_parse_num(row.get('orden') or 0)),
+                    }
+                    if not campos['edificio'] or not campos['tipologia']:
+                        raise ValueError("faltan 'edificio' o 'tipologia'")
+
+                    pk = (row.get('id') or '').strip()
+                    if pk and Propiedad.objects.filter(pk=pk).exists():
+                        Propiedad.objects.filter(pk=pk).update(**campos)
+                        actualizadas += 1
+                    else:
+                        Propiedad.objects.create(**campos)
+                        creadas += 1
+                except Exception as e:
+                    errores.append(f"Fila {i}: {e}")
+
+            if creadas or actualizadas:
+                self.message_user(
+                    request,
+                    f"Importación completada: {creadas} creada(s), {actualizadas} actualizada(s).",
+                    level=messages.SUCCESS,
+                )
+            for err in errores[:10]:
+                self.message_user(request, err, level=messages.WARNING)
+            if len(errores) > 10:
+                self.message_user(request, f"... y {len(errores) - 10} error(es) más.", level=messages.WARNING)
+            if not creadas and not actualizadas and not errores:
+                self.message_user(request, "El archivo no contenía filas válidas.", level=messages.WARNING)
+            return redirect('..')
+
+        return render(request, 'admin/calculadora/propiedad/importar_csv.html', {
+            'title': 'Importar propiedades desde CSV',
+            'campos': PROPIEDAD_CSV_FIELDS,
+            'opts': self.model._meta,
+        })
+
+
 @admin.register(Submission)
 class SubmissionAdmin(admin.ModelAdmin):
-    list_display = ['nombre_completo', 'email', 'valor_propiedad',
-                    'cuota_display', 'relacion_cuota_ingreso',
-                    'estado_califica', 'created_at', 'acciones']
-    list_filter = ['califica', 'created_at', 'plazo_anios']
+    list_display = ['nombre_completo', 'email', 'sueldo_display',
+                    'precio_maximo_display', 'unidades_encontradas', 'created_at']
+    list_filter = ['created_at', 'plazo_anios', 'complementa_renta']
     search_fields = ['nombre_completo', 'email']
     readonly_fields = [
         'nombre_completo', 'email', 'telefono',
-        'valor_propiedad', 'pie', 'monto_credito', 'plazo_anios',
-        'tasa_interes', 'tasa_interes_nombre',
-        'renta_bruta_clp', 'deudas_vigentes_clp', 'valor_uf',
-        'cuota_mensual', 'cuota_mensual_clp',
-        'relacion_cuota_ingreso', 'renta_minima_requerida_clp',
-        'costo_total_credito', 'califica', 'created_at', 'pdf_preview_panel'
+        'sueldo_liquido_clp', 'complementa_renta', 'sueldo_2_clp',
+        'plazo_anios', 'pie_pct', 'tasa_interes', 'tasa_interes_nombre',
+        'valor_uf', 'factor_endeudamiento',
+        'dividendo_uf', 'dividendo_clp',
+        'precio_maximo_uf', 'precio_maximo_clp',
+        'financiamiento_uf', 'financiamiento_clp',
+        'pie_uf', 'pie_clp', 'unidades_encontradas', 'created_at',
     ]
     actions = [exportar_csv]
     list_per_page = 25
@@ -56,84 +221,26 @@ class SubmissionAdmin(admin.ModelAdmin):
         ('Datos de Contacto', {
             'fields': ('nombre_completo', 'email', 'telefono')
         }),
-        ('Datos del Crédito', {
-            'fields': ('valor_propiedad', 'pie', 'monto_credito', 'plazo_anios',
-                       'tasa_interes', 'tasa_interes_nombre',
-                       'renta_bruta_clp', 'deudas_vigentes_clp', 'valor_uf')
+        ('Datos Ingresados', {
+            'fields': ('sueldo_liquido_clp', 'complementa_renta', 'sueldo_2_clp',
+                       'plazo_anios', 'pie_pct', 'tasa_interes', 'tasa_interes_nombre',
+                       'valor_uf', 'factor_endeudamiento')
         }),
         ('Resultado', {
-            'fields': ('cuota_mensual', 'cuota_mensual_clp',
-                       'relacion_cuota_ingreso', 'renta_minima_requerida_clp',
-                       'costo_total_credito', 'califica', 'created_at')
-        }),
-        ('Vista Previa del PDF', {
-            'fields': ('pdf_preview_panel',),
-            'classes': ('wide',),
+            'fields': ('dividendo_uf', 'dividendo_clp',
+                       'precio_maximo_uf', 'precio_maximo_clp',
+                       'financiamiento_uf', 'financiamiento_clp',
+                       'pie_uf', 'pie_clp', 'unidades_encontradas', 'created_at')
         }),
     )
 
-    def cuota_display(self, obj):
-        return f"{obj.cuota_mensual:.2f} UF (${obj.cuota_mensual_clp:,.0f})"
-    cuota_display.short_description = "Cuota Mensual"
+    def sueldo_display(self, obj):
+        return f"${obj.sueldo_liquido_clp:,.0f}"
+    sueldo_display.short_description = "Sueldo Líquido"
 
-    def estado_califica(self, obj):
-        if obj.califica:
-            return format_html('<span style="color:#16a34a;font-weight:700;">&#10004; Califica</span>')
-        return format_html('<span style="color:#dc2626;font-weight:700;">&#10008; No Califica</span>')
-    estado_califica.short_description = "Estado"
-
-    def acciones(self, obj):
-        preview_url = reverse('admin:calculadora_submission_preview_pdf', args=[obj.pk])
-        download_url = reverse('admin:calculadora_submission_download_pdf', args=[obj.pk])
-        return format_html(
-            '<a class="btn-preview-pdf" href="{}" target="_blank" style="margin-right:6px;">&#128065; Ver PDF</a>'
-            '<a class="btn-preview-pdf" href="{}" style="background:#270164;">&#11015; Descargar</a>',
-            preview_url, download_url
-        )
-    acciones.short_description = "Acciones"
-
-    def pdf_preview_panel(self, obj):
-        if not obj.pk:
-            return "Guarde primero para ver la vista previa."
-        preview_url = reverse('admin:calculadora_submission_preview_pdf', args=[obj.pk])
-        return format_html(
-            '<div class="pdf-preview-container">'
-            '<h3>&#128196; Así se verá el PDF que descarga el usuario</h3>'
-            '<iframe src="{}"></iframe>'
-            '</div>',
-            preview_url
-        )
-    pdf_preview_panel.short_description = "Vista Previa"
-
-    def get_urls(self):
-        urls = super().get_urls()
-        custom_urls = [
-            path('<int:pk>/preview-pdf/',
-                 self.admin_site.admin_view(self.preview_pdf_view),
-                 name='calculadora_submission_preview_pdf'),
-            path('<int:pk>/download-pdf/',
-                 self.admin_site.admin_view(self.download_pdf_view),
-                 name='calculadora_submission_download_pdf'),
-        ]
-        return custom_urls + urls
-
-    def preview_pdf_view(self, request, pk):
-        from .utils.pdf_generator import generar_pdf
-        submission = Submission.objects.get(pk=pk)
-        pdf_config = PdfConfig.load()
-        pdf_buffer = generar_pdf(submission, pdf_config)
-        response = HttpResponse(pdf_buffer.getvalue(), content_type='application/pdf')
-        response['Content-Disposition'] = f'inline; filename="preview_{submission.pk}.pdf"'
-        return response
-
-    def download_pdf_view(self, request, pk):
-        from .utils.pdf_generator import generar_pdf
-        submission = Submission.objects.get(pk=pk)
-        pdf_config = PdfConfig.load()
-        pdf_buffer = generar_pdf(submission, pdf_config)
-        response = HttpResponse(pdf_buffer.getvalue(), content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="evaluacion_{submission.pk}.pdf"'
-        return response
+    def precio_maximo_display(self, obj):
+        return f"{obj.precio_maximo_uf:,.0f} UF (${obj.precio_maximo_clp:,.0f})"
+    precio_maximo_display.short_description = "Precio Máximo"
 
     def has_add_permission(self, request):
         return False
@@ -156,26 +263,16 @@ class InterestRateAdmin(admin.ModelAdmin):
 
 @admin.register(PdfConfig)
 class PdfConfigAdmin(admin.ModelAdmin):
-    list_display = ['__str__', 'valor_uf_display', 'updated_at']
+    list_display = ['__str__', 'valor_uf_display', 'factor_endeudamiento', 'updated_at']
     fieldsets = (
-        ('Colores del Formulario Público', {
-            'description': 'Estos colores se aplican al formulario que ven los usuarios (y en iframe de WordPress).',
-            'fields': ('form_color_primario', 'form_color_secundario',
-                       'form_color_califica', 'form_color_no_califica')
+        ('Colores corporativos', {
+            'description': 'Se aplican al formulario público (y en iframe).',
+            'fields': ('form_color_primario', 'form_color_secundario', 'form_color_fondo',
+                       'form_color_califica', 'form_color_no_califica', 'logo')
         }),
-        ('Colores del PDF', {
-            'description': 'Estos colores se aplican al documento PDF que se descarga.',
-            'fields': ('logo', 'color_primario', 'color_secundario')
-        }),
-        ('Textos del PDF', {
-            'fields': ('header_text', 'footer_text')
-        }),
-        ('Valor UF', {
-            'fields': ('valor_uf',),
-            'description': 'El valor de la UF se usa para convertir la cuota mensual (UF) a pesos chilenos.'
-        }),
-        ('Opciones de Contenido del PDF', {
-            'fields': ('mostrar_deudas', 'mostrar_tabla_amortizacion')
+        ('Parámetros de negocio', {
+            'fields': ('valor_uf', 'factor_endeudamiento', 'pie_pct_default'),
+            'description': 'Valor UF (fuente SII.cl), factor de endeudamiento y pie por defecto.'
         }),
     )
 

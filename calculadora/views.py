@@ -1,19 +1,23 @@
 import json
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django.views.decorators.http import require_GET
 
 from .forms import CalculadoraForm
-from .models import InterestRate, Submission, PdfConfig
-from .utils.calculations import evaluar_credito
-from .utils.pdf_generator import generar_pdf
+from .models import InterestRate, Submission, Propiedad, PdfConfig
+from .utils.calculations import calcular_capacidad
 
 
 @xframe_options_exempt
 def calculadora_view(request):
     tasas = InterestRate.objects.filter(activa=True)
-    pdf_config = PdfConfig.load()
+    config = PdfConfig.load()
+
+    resultado = None
+    propiedades = []
+    submission = None
+    financiamiento_pct = None
 
     if request.method == 'POST':
         form = CalculadoraForm(request.POST, tasas=tasas)
@@ -21,41 +25,47 @@ def calculadora_view(request):
             data = form.cleaned_data
             tasa = InterestRate.objects.get(id=data['tasa_interes_id'])
 
-            resultado = evaluar_credito(
-                valor_propiedad=data['valor_propiedad'],
-                pie=data['pie'],
+            resultado = calcular_capacidad(
+                sueldo_liquido_clp=data['sueldo_liquido_clp'],
+                sueldo_2_clp=data['sueldo_2_clp'],
                 plazo_anios=int(data['plazo_anios']),
                 tasa_anual=tasa.porcentaje,
-                renta_bruta_clp=data['renta_bruta_clp'],
-                deudas_vigentes_clp=data['deudas_vigentes_clp'],
-                valor_uf=pdf_config.valor_uf,
+                pie_pct=float(data['pie_pct']),
+                valor_uf=config.valor_uf,
+                factor_endeudamiento=config.factor_endeudamiento,
+            )
+
+            propiedades = list(
+                Propiedad.objects.filter(
+                    activa=True,
+                    precio_uf__lte=resultado['precio_maximo_uf'],
+                )
             )
 
             submission = Submission.objects.create(
                 nombre_completo=data['nombre_completo'],
                 email=data['email'],
                 telefono=data.get('telefono', ''),
-                valor_propiedad=data['valor_propiedad'],
-                pie=data['pie'],
-                monto_credito=resultado['monto_credito'],
+                sueldo_liquido_clp=data['sueldo_liquido_clp'],
+                complementa_renta=(data.get('complementa_renta') == 'si'),
+                sueldo_2_clp=data['sueldo_2_clp'],
                 plazo_anios=int(data['plazo_anios']),
+                pie_pct=float(data['pie_pct']),
                 tasa_interes=tasa.porcentaje,
                 tasa_interes_nombre=tasa.nombre,
-                renta_bruta_clp=data['renta_bruta_clp'],
-                deudas_vigentes_clp=data['deudas_vigentes_clp'],
-                valor_uf=pdf_config.valor_uf,
-                cuota_mensual=resultado['cuota_mensual'],
-                cuota_mensual_clp=resultado['cuota_mensual_clp'],
-                relacion_cuota_ingreso=resultado['relacion_cuota_ingreso'],
-                renta_minima_requerida_clp=resultado['renta_minima_requerida_clp'],
-                costo_total_credito=resultado['costo_total_credito'],
-                califica=resultado['califica'],
+                valor_uf=config.valor_uf,
+                factor_endeudamiento=config.factor_endeudamiento,
+                dividendo_uf=resultado['dividendo_uf'],
+                dividendo_clp=resultado['dividendo_clp'],
+                precio_maximo_uf=resultado['precio_maximo_uf'],
+                precio_maximo_clp=resultado['precio_maximo_clp'],
+                financiamiento_uf=resultado['financiamiento_uf'],
+                financiamiento_clp=resultado['financiamiento_clp'],
+                pie_uf=resultado['pie_uf'],
+                pie_clp=resultado['pie_clp'],
+                unidades_encontradas=len(propiedades),
             )
-
-            pdf_buffer = generar_pdf(submission, pdf_config)
-            response = HttpResponse(pdf_buffer.getvalue(), content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename="evaluacion_{submission.pk}.pdf"'
-            return response
+            financiamiento_pct = 100 - float(data['pie_pct'])
     else:
         form = CalculadoraForm(tasas=tasas)
 
@@ -68,8 +78,14 @@ def calculadora_view(request):
     return render(request, 'calculadora/form.html', {
         'form': form,
         'tasas_json': tasas_json,
-        'valor_uf': pdf_config.valor_uf,
-        'config': pdf_config,
+        'valor_uf': config.valor_uf,
+        'factor_endeudamiento': config.factor_endeudamiento,
+        'pie_pct_default': config.pie_pct_default,
+        'config': config,
+        'resultado': resultado,
+        'propiedades': propiedades,
+        'submission': submission,
+        'financiamiento_pct': financiamiento_pct,
     })
 
 

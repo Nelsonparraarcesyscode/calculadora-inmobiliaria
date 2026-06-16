@@ -1,0 +1,28 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div style="max-width:720px;">
+    <p>Sube un archivo <strong>CSV (UTF-8)</strong> para crear o actualizar propiedades.
+       Las imágenes <strong>no</strong> se importan; se cargan manualmente en cada propiedad.</p>
+
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <p>
+            <input type="file" name="archivo_csv" accept=".csv" required>
+        </p>
+        <p>
+            <button type="submit" class="default">Importar</button>
+            <a href="../" class="button" style="margin-left:8px;">Cancelar</a>
+        </p>
+    </form>
+
+    <h3 style="margin-top:24px;">Formato esperado</h3>
+    <p>Primera fila con los encabezados (en este orden recomendado):</p>
+    <pre style="background:#f6f6f6;padding:12px;border-radius:6px;overflow:auto;">{% for c in campos %}{{ c }}{% if not forloop.last %},{% endif %}{% endfor %}</pre>
+    <ul>
+        <li><strong>id</strong>: déjalo vacío para crear una propiedad nueva; con un id existente se actualiza esa fila.</li>
+        <li><strong>precio_uf</strong> y superficies aceptan formato chileno (<code>2.160</code>, <code>42,33</code>) o simple (<code>2160</code>, <code>42.33</code>).</li>
+        <li><strong>activa</strong>: <code>si</code>/<code>no</code> (o 1/0, true/false).</li>
+        <li>Genera una plantilla exacta con el botón <em>Exportar CSV</em> del listado.</li>
+    </ul>
+</div>
+{% endblock %}

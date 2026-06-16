@@ -1,49 +1,65 @@
-def calcular_cuota_mensual(monto: float, tasa_anual: float, plazo_anios: int) -> float:
-    """Amortización francesa: cuota fija mensual en UF."""
-    if monto <= 0 or tasa_anual <= 0 or plazo_anios <= 0:
+def factor_anualidad(tasa_anual: float, plazo_anios: int) -> float:
+    """Factor de valor presente de una anualidad (amortización francesa).
+
+    monto_credito = cuota_periodica * factor_anualidad
+    factor = (1 - (1 + r)^-n) / r   con r = tasa mensual, n = nº de meses.
+    """
+    if tasa_anual <= 0 or plazo_anios <= 0:
         return 0.0
     r = tasa_anual / 100 / 12
     n = plazo_anios * 12
-    cuota = monto * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
-    return round(cuota, 4)
+    return (1 - (1 + r) ** -n) / r
 
 
-def evaluar_credito(
-    valor_propiedad: float,
-    pie: float,
+def calcular_capacidad(
+    sueldo_liquido_clp: float,
+    sueldo_2_clp: float,
     plazo_anios: int,
     tasa_anual: float,
-    renta_bruta_clp: float,
-    deudas_vigentes_clp: float,
+    pie_pct: float,
     valor_uf: float,
+    factor_endeudamiento: float = 3.6,
 ) -> dict:
-    monto_credito = valor_propiedad - pie
-    if monto_credito <= 0:
-        return {
-            'monto_credito': 0,
-            'cuota_mensual': 0.0,
-            'cuota_mensual_clp': 0,
-            'relacion_cuota_ingreso': 0.0,
-            'renta_minima_requerida_clp': 0,
-            'costo_total_credito': 0.0,
-            'califica': False,
-        }
-    cuota_uf = calcular_cuota_mensual(monto_credito, tasa_anual, plazo_anios)
-    cuota_clp = round(cuota_uf * valor_uf)
+    """Calcula, a partir del sueldo líquido, el precio máximo de depto que se puede adquirir.
 
-    carga_total_clp = cuota_clp + deudas_vigentes_clp
-    relacion = round(carga_total_clp / renta_bruta_clp * 100, 2) if renta_bruta_clp > 0 else 100.0
-    califica = relacion <= 25.0
+    Reglas de negocio (Peterman):
+      - dividendo máximo = (sueldo líquido + sueldo 2) / factor_endeudamiento
+      - precio máximo (UF) = dividendo_UF * factor_anualidad(tasa, plazo)
+      - financiamiento banco = precio máximo * (1 - pie%)
+      - pie / ahorro = precio máximo * pie%
+    """
+    ingreso_total = (sueldo_liquido_clp or 0) + (sueldo_2_clp or 0)
+    pie_frac = (pie_pct or 0) / 100.0
 
-    renta_minima_clp = round(carga_total_clp / 0.25)
-    costo_total = round(cuota_uf * plazo_anios * 12, 4)
+    vacio = {
+        'dividendo_clp': 0.0, 'dividendo_uf': 0.0,
+        'precio_maximo_uf': 0.0, 'precio_maximo_clp': 0.0,
+        'financiamiento_uf': 0.0, 'financiamiento_clp': 0.0,
+        'pie_uf': 0.0, 'pie_clp': 0.0,
+    }
+
+    if ingreso_total <= 0 or valor_uf <= 0 or factor_endeudamiento <= 0:
+        return vacio
+
+    dividendo_clp = ingreso_total / factor_endeudamiento
+    dividendo_uf = dividendo_clp / valor_uf
+
+    factor = factor_anualidad(tasa_anual, plazo_anios)
+    precio_maximo_uf = dividendo_uf * factor
+    if precio_maximo_uf <= 0:
+        return vacio
+
+    precio_maximo_clp = precio_maximo_uf * valor_uf
+    financiamiento_uf = precio_maximo_uf * (1 - pie_frac)
+    pie_uf = precio_maximo_uf * pie_frac
 
     return {
-        'monto_credito': round(monto_credito, 4),
-        'cuota_mensual': cuota_uf,
-        'cuota_mensual_clp': cuota_clp,
-        'relacion_cuota_ingreso': relacion,
-        'renta_minima_requerida_clp': renta_minima_clp,
-        'costo_total_credito': costo_total,
-        'califica': califica,
+        'dividendo_clp': round(dividendo_clp),
+        'dividendo_uf': round(dividendo_uf, 2),
+        'precio_maximo_uf': round(precio_maximo_uf, 2),
+        'precio_maximo_clp': round(precio_maximo_clp),
+        'financiamiento_uf': round(financiamiento_uf, 2),
+        'financiamiento_clp': round(financiamiento_uf * valor_uf),
+        'pie_uf': round(pie_uf, 2),
+        'pie_clp': round(pie_uf * valor_uf),
     }
