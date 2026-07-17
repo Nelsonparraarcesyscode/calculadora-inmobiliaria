@@ -61,6 +61,15 @@ class CalculadoraForm(forms.Form):
         }),
         label="Mi ahorro para el pie"
     )
+    # Honeypot anti-spam: campo invisible para humanos; si llega con valor,
+    # el envío es de un bot y se rechaza.
+    sitio_web = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'tabindex': '-1', 'autocomplete': 'off', 'aria-hidden': 'true',
+        }),
+        label=""
+    )
     tasa_interes_id = forms.ChoiceField(
         choices=[],
         widget=forms.Select(attrs={
@@ -103,6 +112,9 @@ class CalculadoraForm(forms.Form):
 
     def clean(self):
         cleaned_data = super().clean()
+        if cleaned_data.get('sitio_web'):
+            raise forms.ValidationError(
+                'No pudimos validar tu envío. Recarga la página e intenta de nuevo.')
         # Si no complementa renta, ignorar el sueldo 2.
         if cleaned_data.get('complementa_renta') != 'si':
             cleaned_data['sueldo_2_clp'] = 0

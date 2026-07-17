@@ -24,18 +24,30 @@ try:
 except ImportError:
     pass
 
-# SECURITY: Use environment variables in production
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-=mfn48a7_$fl*3!g5m)u8y^&e&@n!!f&q12(lrnk&z+t93a)$*'
-)
+# Dominio público de Railway: si existe, asumimos entorno de producción.
+_railway_host = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
 
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
+# DEBUG: en Railway (producción) el default es False; en local, True.
+# Siempre puede forzarse con DJANGO_DEBUG.
+_debug_default = 'False' if _railway_host else 'True'
+DEBUG = os.environ.get('DJANGO_DEBUG', _debug_default).lower() in ('true', '1', 'yes')
+
+# SECRET_KEY: obligatoria en producción; el fallback sólo aplica con DEBUG.
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', '')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'django-insecure-clave-solo-para-desarrollo-local'
+    else:
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            'DJANGO_SECRET_KEY no está definida. Genera una con '
+            '"python -c \"from django.core.management.utils import get_random_secret_key; '
+            'print(get_random_secret_key())\"" y configúrala como variable de entorno.'
+        )
 
 _allowed = os.environ.get('DJANGO_ALLOWED_HOSTS', '')
 ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
 # Acepta automáticamente el dominio de Railway si está definido
-_railway_host = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
 if _railway_host and _railway_host not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(_railway_host)
 if not ALLOWED_HOSTS:
@@ -139,7 +151,9 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 MEDIA_URL = 'media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+# En Railway, montar un volumen persistente y apuntar DJANGO_MEDIA_ROOT a él
+# (ej: /data/media); si no, las imágenes subidas se pierden en cada deploy.
+MEDIA_ROOT = Path(os.environ.get('DJANGO_MEDIA_ROOT', BASE_DIR / 'media'))
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

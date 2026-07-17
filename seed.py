@@ -23,11 +23,26 @@ for rate in rates:
 PdfConfig.load()
 print("  PdfConfig creada")
 
-# Admin user
-if not User.objects.filter(username='admin').exists():
-    User.objects.create_superuser('admin', 'admin@localhost', 'admin123')
-    print("  Superusuario creado: admin / admin123")
+# Admin user — credenciales SÓLO por variables de entorno (nunca hardcodeadas).
+admin_username = os.environ.get('DJANGO_SUPERUSER_USERNAME', 'admin')
+admin_password = os.environ.get('DJANGO_SUPERUSER_PASSWORD')
+admin_email = os.environ.get('DJANGO_SUPERUSER_EMAIL', 'admin@localhost')
+
+if not admin_password:
+    print("  DJANGO_SUPERUSER_PASSWORD no definida: no se crea/actualiza superusuario.")
+    print("  (Créalo manualmente con: python manage.py createsuperuser)")
 else:
-    print("  Superusuario ya existe")
+    user = User.objects.filter(username=admin_username).first()
+    if user is None:
+        User.objects.create_superuser(admin_username, admin_email, admin_password)
+        print(f"  Superusuario creado: {admin_username}")
+    else:
+        # Sincroniza la contraseña con la variable de entorno (remedia
+        # instalaciones antiguas que quedaron con una clave por defecto).
+        user.set_password(admin_password)
+        user.is_staff = True
+        user.is_superuser = True
+        user.save()
+        print(f"  Superusuario actualizado: {admin_username}")
 
 print("Seed completado.")

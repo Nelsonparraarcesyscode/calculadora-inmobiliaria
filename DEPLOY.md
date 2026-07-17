@@ -76,6 +76,20 @@ O desde cPanel → Setup Python App → **Restart**
 └── tmp/restart.txt          ← Touch para reiniciar
 ```
 
+## Despliegue en Railway — variables requeridas
+En Railway (detectado por `RAILWAY_PUBLIC_DOMAIN`) el proyecto arranca con `DEBUG=False`
+y **exige** estas variables (Settings → Variables del servicio):
+
+| Variable | Obligatoria | Descripción |
+|---|---|---|
+| `DJANGO_SECRET_KEY` | Sí | Si falta, la app no arranca (por diseño). |
+| `DJANGO_SUPERUSER_PASSWORD` | Recomendada | Sin ella, `seed.py` no crea/actualiza el superusuario. |
+| `DJANGO_SUPERUSER_USERNAME` | No (default `admin`) | Usuario del admin. |
+| `DJANGO_MEDIA_ROOT` | Recomendada | Ruta de un volumen persistente (ej: `/data/media`) para que las imágenes subidas sobrevivan a los deploys. Requiere montar un Volume en el servicio. |
+
+> Nota: si la instalación quedó con el antiguo usuario `admin/admin123`, al definir
+> `DJANGO_SUPERUSER_PASSWORD` el próximo deploy actualizará la contraseña automáticamente.
+
 ## Notas de seguridad
 - El `.htaccess` deniega acceso directo a `.env`, `db.sqlite3` y archivos `.py`
 - `DEBUG=False` activa HSTS, SSL redirect, secure cookies automáticamente

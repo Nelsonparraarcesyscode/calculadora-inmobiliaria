@@ -13,6 +13,12 @@
     <form method="post" @submit="submitting = true">
         {% csrf_token %}
 
+        <!-- Honeypot anti-spam: invisible para humanos, los bots lo rellenan. -->
+        <div style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true">
+            <label for="id_sitio_web">No completar este campo</label>
+            {{ form.sitio_web }}
+        </div>
+
         {% if form.non_field_errors %}
         <div class="errorlist" style="background:#fef2f2; border:1px solid var(--color-no-califica); border-radius:8px; padding:12px; margin-top:16px;">
             {{ form.non_field_errors }}
@@ -37,8 +43,9 @@
             <div class="inline-renta">
                 <span class="q">¿Quieres complementar renta?</span>
                 <div class="radio-row">
-                    <label><input type="radio" name="complementa_renta" value="no" x-model="complementaRenta"> NO</label>
-                    <label><input type="radio" name="complementa_renta" value="si" x-model="complementaRenta"> SI</label>
+                    {% for radio in form.complementa_renta %}
+                    <label>{{ radio.tag }} {{ radio.choice_label }}</label>
+                    {% endfor %}
                 </div>
                 <template x-if="complementaRenta === 'si'">
                     <div style="display:flex; align-items:center; gap:10px;">

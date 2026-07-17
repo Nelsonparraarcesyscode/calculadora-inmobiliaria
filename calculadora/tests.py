@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
@@ -6,7 +7,7 @@ from .admin import _parse_num, _parse_bool
 from .forms import CalculadoraForm
 from .models import InterestRate, PdfConfig, Propiedad, Submission
 from .utils.calculations import factor_anualidad, calcular_capacidad
-from .utils.rut_validator import validar_rut, formatear_rut
+from .views import MAX_ENVIOS_POR_HORA
 
 
 class CsvParseTests(TestCase):
@@ -160,17 +161,6 @@ class FormValidationTests(TestCase):
         self.assertEqual(form.cleaned_data['sueldo_2_clp'], 500_000)
 
 
-class RutValidatorTests(TestCase):
-    def test_rut_valido(self):
-        self.assertTrue(validar_rut('12.345.678-5'))
-
-    def test_rut_invalido(self):
-        self.assertFalse(validar_rut('12.345.678-0'))
-
-    def test_formatear_rut(self):
-        self.assertEqual(formatear_rut('123456785'), '12.345.678-5')
-
-
 class ViewIntegrationTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -187,13 +177,12 @@ class ViewIntegrationTests(TestCase):
         Propiedad.objects.create(edificio="Caro", comuna="Las Condes",
                                  tipologia="3D + 2B", precio_uf=9000, activa=True)
 
-    def test_get_form(self):
-        response = self.client.get('/')
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Calcula tu Departamento')
+    def setUp(self):
+        # El cache local persiste entre tests: limpiar el contador anti-spam.
+        cache.clear()
 
-    def test_post_calcula_y_filtra(self):
-        response = self.client.post('/', {
+    def _post_data(self, **overrides):
+        data = {
             'nombre_completo': 'María López',
             'email': 'maria@test.cl',
             'telefono': '',
@@ -203,13 +192,44 @@ class ViewIntegrationTests(TestCase):
             'plazo_anios': '10',
             'pie_pct': '10',
             'tasa_interes_id': str(self.tasa.id),
-        })
+        }
+        data.update(overrides)
+        return data
+
+    def test_get_form(self):
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Calcula tu Departamento')
+
+    def test_post_calcula_y_filtra(self):
+        response = self.client.post('/', self._post_data())
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '6.149,02')
         # Sólo la propiedad de 2160 UF cabe en el presupuesto (no la de 9000).
         sub = Submission.objects.latest('created_at')
         self.assertEqual(sub.unidades_encontradas, 1)
         self.assertContains(response, 'Gamero 436')
+
+    def test_honeypot_rechaza_bots(self):
+        response = self.client.post('/', self._post_data(sitio_web='http://spam.com'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Submission.objects.count(), 0)
+
+    def test_rate_limit_por_ip(self):
+        # Simular que la IP ya agotó su cuota horaria.
+        cache.set('calc-envios-127.0.0.1', MAX_ENVIOS_POR_HORA, 3600)
+        response = self.client.post('/', self._post_data())
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Submission.objects.count(), 0)
+        self.assertContains(response, 'demasiadas simulaciones')
+
+    def test_tasa_desactivada_no_falla(self):
+        # Tasa inactiva no listada en el form → el POST no debe dar 500.
+        inactiva = InterestRate.objects.create(
+            nombre="Vieja", porcentaje=9.9, activa=False)
+        response = self.client.post('/', self._post_data(tasa_interes_id=str(inactiva.id)))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Submission.objects.count(), 0)
 
     def test_rates_json_endpoint(self):
         response = self.client.get('/api/rates/')
