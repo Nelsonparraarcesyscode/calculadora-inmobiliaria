@@ -11,7 +11,7 @@
 2. Selecciona Python 3.10+ (o la versión más reciente disponible)
 3. **Application root**: `calculadora-inmobiliaria` (la carpeta del proyecto)
 4. **Application URL**: `/` o el subdominio deseado
-5. **Application startup file**: `passenger_wsgi.py`
+5. **Application startup file**: `app.py`
 6. Click **Create**
 
 ### 2. Subir archivos
@@ -65,7 +65,7 @@ O desde cPanel → Setup Python App → **Restart**
 ~/calculadora-inmobiliaria/
 ├── .env                     ← Variables de entorno (NO commitear)
 ├── .htaccess                ← Seguridad Apache
-├── passenger_wsgi.py        ← Entry point Passenger
+├── app.py        ← Entry point Passenger
 ├── manage.py
 ├── requirements.txt
 ├── db.sqlite3               ← Base de datos (se crea con migrate)

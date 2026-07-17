@@ -35,3 +35,6 @@ staticfiles/
 server.log
 server.err
 page.html
+
+# Generado por cPanel (plantilla de Passenger que carga app.py)
+passenger_wsgi.py

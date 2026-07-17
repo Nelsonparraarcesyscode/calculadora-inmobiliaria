@@ -1,6 +1,11 @@
 """
-Passenger WSGI entry point for cPanel Python App hosting.
-cPanel uses Phusion Passenger to serve Python/Django apps.
+WSGI entry point for cPanel Python App hosting (Passenger).
+
+IMPORTANTE: en cPanel el "Application startup file" debe ser este archivo
+(app.py) y el "Entry point" debe ser "application". NO usar el nombre
+passenger_wsgi.py: cPanel genera su propio passenger_wsgi.py (una plantilla
+que carga el startup file) y si ambos se llaman igual, el archivo se importa
+a sí mismo en un bucle infinito (RecursionError).
 """
 import os
 import sys
