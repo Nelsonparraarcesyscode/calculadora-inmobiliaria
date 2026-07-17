@@ -10,6 +10,6 @@ PassengerAppRoot /home/USUARIO/calculadora-inmobiliaria
     Require all denied
 </FilesMatch>
 
-<FilesMatch "^(manage\.py|seed\.py|passenger_wsgi\.py)$">
+<FilesMatch "^(manage\.py|seed\.py|app\.py|passenger_wsgi\.py)$">
     Require all denied
 </FilesMatch>
