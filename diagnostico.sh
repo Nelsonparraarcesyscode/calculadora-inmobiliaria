@@ -32,4 +32,11 @@ python manage.py shell -c "from django.test import Client; print(Client(SERVER_N
 echo "===== 6. Ultimas 5 lineas de passenger.log ====="
 tail -5 "$HOME/logs/passenger.log" 2>/dev/null || echo "(sin log)"
 
+DOCROOT="$HOME/public_html/calculadora.petermanncapitalgroup.cl"
+echo "===== 7. Contenido del docroot del subdominio ====="
+ls -la "$DOCROOT" 2>/dev/null || echo "(no existe el docroot)"
+
+echo "===== 8. .htaccess del docroot ====="
+cat "$DOCROOT/.htaccess" 2>/dev/null || echo "(no existe .htaccess en el docroot)"
+
 echo "===== FIN DEL DIAGNOSTICO ====="
