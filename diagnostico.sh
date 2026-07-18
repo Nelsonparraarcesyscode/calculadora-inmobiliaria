@@ -17,6 +17,15 @@ curl -sk -o /dev/null -w "%{http_code}\n" "https://$DOMAIN/admin/login/"
 echo "===== 4. Codigo HTTP de un estatico del admin (esperado: 200) ====="
 curl -sk -o /dev/null -w "%{http_code}\n" "https://$DOMAIN/static/admin/css/base.css"
 
+echo "===== 4b. URL Django SIN la palabra admin (esperado: 200) ====="
+curl -sk -o /dev/null -w "%{http_code}\n" "https://$DOMAIN/api/rates/"
+
+echo "===== 4c. URL inexistente SIN la palabra admin (esperado: 404) ====="
+curl -sk -o /dev/null -w "%{http_code}\n" "https://$DOMAIN/ruta-de-prueba/"
+
+echo "===== 4d. URL inexistente CON la palabra admin (404 = no hay bloqueo; 500 = bloqueo por patron) ====="
+curl -sk -o /dev/null -w "%{http_code}\n" "https://$DOMAIN/prueba-admin-xyz/"
+
 echo "===== 5. Admin probado DENTRO de Django, sin pasar por Apache (esperado: 302) ====="
 python manage.py shell -c "from django.test import Client; print(Client(SERVER_NAME='calculadora.petermanncapitalgroup.cl').get('/admin/', secure=True).status_code)" 2>&1 | tail -3
 
