@@ -24,13 +24,9 @@ try:
 except ImportError:
     pass
 
-# Dominio público de Railway: si existe, asumimos entorno de producción.
-_railway_host = os.environ.get('RAILWAY_PUBLIC_DOMAIN', '')
-
-# DEBUG: en Railway (producción) el default es False; en local, True.
-# Siempre puede forzarse con DJANGO_DEBUG.
-_debug_default = 'False' if _railway_host else 'True'
-DEBUG = os.environ.get('DJANGO_DEBUG', _debug_default).lower() in ('true', '1', 'yes')
+# DEBUG: por defecto True para desarrollo local. En producción (cPanel) el
+# .env define DJANGO_DEBUG=False, lo que activa todo el hardening de más abajo.
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
 # SECRET_KEY: obligatoria en producción; el fallback sólo aplica con DEBUG.
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', '')
@@ -47,9 +43,6 @@ if not SECRET_KEY:
 
 _allowed = os.environ.get('DJANGO_ALLOWED_HOSTS', '')
 ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
-# Acepta automáticamente el dominio de Railway si está definido
-if _railway_host and _railway_host not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(_railway_host)
 if not ALLOWED_HOSTS:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
@@ -63,8 +56,21 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'axes',
     'calculadora',
 ]
+
+# Protección contra fuerza bruta en el login (django-axes):
+# tras AXES_FAILURE_LIMIT intentos fallidos por combinación usuario+IP,
+# bloquea por AXES_COOLOFF_TIME horas. Se resetea con un login exitoso.
+AUTHENTICATION_BACKENDS = [
+    'axes.backends.AxesStandaloneBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = 1  # horas
+AXES_LOCKOUT_PARAMETERS = [['username', 'ip_address']]
+AXES_RESET_ON_SUCCESS = True
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -75,6 +81,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'axes.middleware.AxesMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -97,7 +104,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 
-# Database — usa DATABASE_URL en producción (Railway), SQLite en desarrollo
+# Database — usa DATABASE_URL si está definida (PostgreSQL), SQLite en su defecto
 DATABASE_URL = os.environ.get('DATABASE_URL')
 if DATABASE_URL:
     DATABASES = {'default': dj_database_url.config(default=DATABASE_URL, conn_max_age=600)}
@@ -151,8 +158,8 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 MEDIA_URL = 'media/'
-# En Railway, montar un volumen persistente y apuntar DJANGO_MEDIA_ROOT a él
-# (ej: /data/media); si no, las imágenes subidas se pierden en cada deploy.
+# En cPanel las imágenes viven en la carpeta media/ del proyecto (persistente).
+# DJANGO_MEDIA_ROOT permite apuntar a otra ruta si hace falta.
 MEDIA_ROOT = Path(os.environ.get('DJANGO_MEDIA_ROOT', BASE_DIR / 'media'))
 
 # Default primary key field type
@@ -171,12 +178,24 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
-    X_FRAME_OPTIONS = 'SAMEORIGIN'
+    # El admin nunca debe embeberse; la calculadora pública se exceptúa con
+    # @xframe_options_exempt + CSP frame-ancestors en su vista.
+    X_FRAME_OPTIONS = 'DENY'
+
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+SESSION_COOKIE_HTTPONLY = True
+
+# Dominios autorizados a incrustar la calculadora en un <iframe>.
+# La vista pública envía CSP frame-ancestors con esta lista (en vez de
+# permitir cualquier sitio). Separar por comas en la variable de entorno.
+_frame_ancestors = os.environ.get(
+    'DJANGO_FRAME_ANCESTORS',
+    'https://petermanncapitalgroup.cl,https://www.petermanncapitalgroup.cl,'
+    'https://petermanncapitalgroup.syscode.cloud,'
+    'https://calculadora.petermanncapitalgroup.cl'
+)
+CALC_FRAME_ANCESTORS = [h.strip() for h in _frame_ancestors.split(',') if h.strip()]
 
 # CSRF trusted origins (set your domain in production)
 _csrf = os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '')
 CSRF_TRUSTED_ORIGINS = [h.strip() for h in _csrf.split(',') if h.strip()]
-if _railway_host:
-    _railway_origin = f'https://{_railway_host}'
-    if _railway_origin not in CSRF_TRUSTED_ORIGINS:
-        CSRF_TRUSTED_ORIGINS.append(_railway_origin)

@@ -12,8 +12,8 @@ urlpatterns = [
     path('', include('calculadora.urls')),
 ]
 
-# Servir archivos de media también en producción (Railway no tiene un
-# servidor web separado para /media/). Para sitios pequeños es suficiente.
+# Servir archivos de media desde Django. Para sitios pequeños es suficiente;
+# en cPanel evita tener que configurar un alias de Apache para /media/.
 urlpatterns += [
     re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
 ]

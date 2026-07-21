@@ -61,6 +61,14 @@ class Propiedad(models.Model):
 
 
 class Submission(models.Model):
+    ESTADOS = [
+        ('nuevo', 'Nuevo'),
+        ('contactado', 'Contactado'),
+        ('calificado', 'Calificado'),
+        ('ganado', 'Ganado'),
+        ('perdido', 'Perdido'),
+    ]
+
     nombre_completo = models.CharField(max_length=200, verbose_name="Nombre Completo")
     email = models.EmailField()
     telefono = models.CharField(max_length=20, verbose_name="Teléfono", blank=True, default="")
@@ -86,6 +94,12 @@ class Submission(models.Model):
     pie_uf = models.FloatField(verbose_name="Pie / Ahorro (UF)", default=0)
     pie_clp = models.FloatField(verbose_name="Pie / Ahorro (CLP)", default=0)
     unidades_encontradas = models.IntegerField(verbose_name="Unidades Encontradas", default=0)
+
+    # Seguimiento comercial (tablero Kanban del admin)
+    estado = models.CharField(
+        max_length=20, choices=ESTADOS, default='nuevo', verbose_name="Estado",
+        help_text="Etapa del lead en el pipeline comercial."
+    )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Evaluación")
 

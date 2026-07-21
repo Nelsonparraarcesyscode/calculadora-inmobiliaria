@@ -76,16 +76,17 @@ O desde cPanel → Setup Python App → **Restart**
 └── tmp/restart.txt          ← Touch para reiniciar
 ```
 
-## Despliegue en Railway — variables requeridas
-En Railway (detectado por `RAILWAY_PUBLIC_DOMAIN`) el proyecto arranca con `DEBUG=False`
-y **exige** estas variables (Settings → Variables del servicio):
+## Variables de entorno (.env)
+En producción el `.env` **exige** estas variables:
 
 | Variable | Obligatoria | Descripción |
 |---|---|---|
-| `DJANGO_SECRET_KEY` | Sí | Si falta, la app no arranca (por diseño). |
+| `DJANGO_SECRET_KEY` | Sí | Con `DEBUG=False`, si falta la app no arranca (por diseño). |
+| `DJANGO_DEBUG` | Sí | `False` en producción (activa todo el hardening). |
+| `DJANGO_ALLOWED_HOSTS` | Sí | Dominio(s) del sitio, separados por coma. |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Sí | Los mismos dominios con `https://`. |
+| `DJANGO_FRAME_ANCESTORS` | Recomendada | Dominios autorizados a incrustar la calculadora en iframe. |
 | `DJANGO_SUPERUSER_PASSWORD` | Recomendada | Sin ella, `seed.py` no crea/actualiza el superusuario. |
-| `DJANGO_SUPERUSER_USERNAME` | No (default `admin`) | Usuario del admin. |
-| `DJANGO_MEDIA_ROOT` | Recomendada | Ruta de un volumen persistente (ej: `/data/media`) para que las imágenes subidas sobrevivan a los deploys. Requiere montar un Volume en el servicio. |
 
 > Nota: si la instalación quedó con el antiguo usuario `admin/admin123`, al definir
 > `DJANGO_SUPERUSER_PASSWORD` el próximo deploy actualizará la contraseña automáticamente.
@@ -93,7 +94,16 @@ y **exige** estas variables (Settings → Variables del servicio):
 ## Notas de seguridad
 - El `.htaccess` deniega acceso directo a `.env`, `db.sqlite3` y archivos `.py`
 - `DEBUG=False` activa HSTS, SSL redirect, secure cookies automáticamente
+- **Fuerza bruta**: `django-axes` bloquea el login tras 5 intentos fallidos por
+  usuario+IP durante 1 hora. Desbloquear con `python manage.py axes_reset`.
+- **Embed (clickjacking)**: la calculadora solo se puede incrustar en iframe desde
+  los dominios de `DJANGO_FRAME_ANCESTORS` (CSP `frame-ancestors`); el admin es `DENY`.
 - Actualiza el valor UF desde el admin: `/admin/`
+
+## Pipeline de leads (CRM Kanban)
+En `/admin/calculadora/submission/pipeline/` los leads se arrastran entre columnas
+(Nuevo → Contactado → Calificado → Ganado → Perdido). El estado también es editable
+desde el detalle de cada evaluación. El resto de los datos del lead es de solo lectura.
 
 ## Embed en WordPress (iframe)
 La vista tiene `@xframe_options_exempt` para permitir embed. Usa:

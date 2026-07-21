@@ -28,12 +28,13 @@ class CsvParseTests(TestCase):
 class PropiedadCsvAdminTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        User.objects.create_superuser('admin', 'a@a.cl', 'admin123')
+        cls.admin = User.objects.create_superuser('admin', 'a@a.cl', 'admin123')
         cls.prop = Propiedad.objects.create(
             edificio="Existente", comuna="Chillán", tipologia="2D + 1B", precio_uf=2160)
 
     def setUp(self):
-        self.client.login(username='admin', password='admin123')
+        # force_login evita pasar por authenticate() (django-axes exige request ahí).
+        self.client.force_login(self.admin)
 
     def test_export_sin_columna_imagen(self):
         r = self.client.get('/admin/calculadora/propiedad/exportar-csv/')
@@ -237,3 +238,62 @@ class ViewIntegrationTests(TestCase):
         data = response.json()
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]['nombre'], 'CMF')
+
+    def test_embed_csp_frame_ancestors(self):
+        # El embed en iframe se controla por CSP (no por X-Frame-Options).
+        response = self.client.get('/')
+        csp = response.headers.get('Content-Security-Policy', '')
+        self.assertIn('frame-ancestors', csp)
+
+    def test_lead_nace_en_estado_nuevo(self):
+        self.client.post('/', self._post_data())
+        sub = Submission.objects.latest('created_at')
+        self.assertEqual(sub.estado, 'nuevo')
+
+
+class PipelineKanbanTests(TestCase):
+    """Tablero Kanban de leads en el admin (drag & drop de estados)."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser('boss', 'b@b.cl', 'pass12345')
+        cls.lead = Submission.objects.create(
+            nombre_completo='Lead Uno', email='l1@test.cl', estado='nuevo')
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def _mover(self, lead_id, estado):
+        return self.client.post(
+            '/admin/calculadora/submission/pipeline/mover/',
+            data={'id': lead_id, 'estado': estado},
+            content_type='application/json',
+        )
+
+    def test_pipeline_view_carga(self):
+        r = self.client.get('/admin/calculadora/submission/pipeline/')
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'Lead Uno')
+
+    def test_mover_cambia_estado(self):
+        r = self._mover(self.lead.id, 'contactado')
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()['ok'])
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.estado, 'contactado')
+
+    def test_mover_estado_invalido_rechaza(self):
+        r = self._mover(self.lead.id, 'inventado')
+        self.assertEqual(r.status_code, 400)
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.estado, 'nuevo')
+
+    def test_mover_lead_inexistente(self):
+        r = self._mover(999999, 'ganado')
+        self.assertEqual(r.status_code, 404)
+
+    def test_mover_requiere_login(self):
+        self.client.logout()
+        r = self._mover(self.lead.id, 'ganado')
+        # Sin sesión de staff, el admin redirige al login (302).
+        self.assertIn(r.status_code, (302, 403))

@@ -1,4 +1,5 @@
 import json
+from django.conf import settings
 from django.core.cache import cache
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -99,7 +100,7 @@ def calculadora_view(request):
         for t in tasas
     ])
 
-    return render(request, 'calculadora/form.html', {
+    response = render(request, 'calculadora/form.html', {
         'form': form,
         'tasas_json': tasas_json,
         'valor_uf': config.valor_uf,
@@ -111,6 +112,12 @@ def calculadora_view(request):
         'submission': submission,
         'financiamiento_pct': financiamiento_pct,
     })
+    # Permite el embed SOLO desde los dominios autorizados (anti-clickjacking).
+    # X-Frame-Options no soporta lista blanca, por eso la vista está exenta
+    # de ese header y el control se hace con CSP frame-ancestors.
+    ancestors = ' '.join(["'self'"] + settings.CALC_FRAME_ANCESTORS)
+    response['Content-Security-Policy'] = f'frame-ancestors {ancestors}'
+    return response
 
 
 @require_GET
