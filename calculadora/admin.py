@@ -1,10 +1,12 @@
 import csv
 import io
+import json
 from django.contrib import admin, messages
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import redirect, render
 from django.urls import path
 from django.utils.html import format_html
+from django.views.decorators.http import require_POST
 from .models import Submission, InterestRate, Propiedad, PdfConfig
 
 
@@ -200,9 +202,10 @@ class PropiedadAdmin(admin.ModelAdmin):
 
 @admin.register(Submission)
 class SubmissionAdmin(admin.ModelAdmin):
-    list_display = ['nombre_completo', 'email', 'sueldo_display',
+    list_display = ['nombre_completo', 'email', 'estado_badge', 'sueldo_display',
                     'precio_maximo_display', 'unidades_encontradas', 'created_at']
-    list_filter = ['created_at', 'plazo_anios', 'complementa_renta']
+    list_filter = ['estado', 'created_at', 'plazo_anios', 'complementa_renta']
+    change_list_template = 'admin/calculadora/submission/change_list.html'
     search_fields = ['nombre_completo', 'email']
     readonly_fields = [
         'nombre_completo', 'email', 'telefono',
@@ -218,6 +221,9 @@ class SubmissionAdmin(admin.ModelAdmin):
     list_per_page = 25
 
     fieldsets = (
+        ('Seguimiento', {
+            'fields': ('estado',)
+        }),
         ('Datos de Contacto', {
             'fields': ('nombre_completo', 'email', 'telefono')
         }),
@@ -234,6 +240,71 @@ class SubmissionAdmin(admin.ModelAdmin):
         }),
     )
 
+    ESTADO_COLORES = {
+        'nuevo': '#2563eb',
+        'contactado': '#d97706',
+        'calificado': '#7c3aed',
+        'ganado': '#16a34a',
+        'perdido': '#9ca3af',
+    }
+
+    def estado_badge(self, obj):
+        color = self.ESTADO_COLORES.get(obj.estado, '#6b7280')
+        return format_html(
+            '<span style="background:{}18;color:{};border:1px solid {}40;'
+            'border-radius:999px;padding:2px 10px;font-weight:700;font-size:11px;">{}</span>',
+            color, color, color, obj.get_estado_display()
+        )
+    estado_badge.short_description = "Estado"
+    estado_badge.admin_order_field = 'estado'
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path('pipeline/', self.admin_site.admin_view(self.pipeline_view),
+                 name='calculadora_submission_pipeline'),
+            path('pipeline/mover/', self.admin_site.admin_view(require_POST(self.pipeline_mover_view)),
+                 name='calculadora_submission_pipeline_mover'),
+        ]
+        return custom + urls
+
+    def pipeline_view(self, request):
+        columnas = []
+        for key, label in Submission.ESTADOS:
+            qs = Submission.objects.filter(estado=key)
+            columnas.append({
+                'key': key,
+                'label': label,
+                'color': self.ESTADO_COLORES.get(key, '#6b7280'),
+                'leads': qs[:200],  # tope defensivo por columna
+                'total': qs.count(),
+            })
+        context = {
+            **self.admin_site.each_context(request),
+            'title': 'Pipeline de Leads',
+            'columnas': columnas,
+            'opts': self.model._meta,
+            'puede_mover': request.user.has_perm('calculadora.change_submission'),
+        }
+        return render(request, 'admin/calculadora/submission/pipeline.html', context)
+
+    def pipeline_mover_view(self, request):
+        """Cambia el estado de un lead (drag & drop del Kanban)."""
+        if not request.user.has_perm('calculadora.change_submission'):
+            return JsonResponse({'ok': False, 'error': 'Sin permisos para mover leads.'}, status=403)
+        try:
+            data = json.loads(request.body)
+            lead_id = int(data['id'])
+            estado = str(data['estado'])
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            return HttpResponseBadRequest('Payload inválido')
+        if estado not in dict(Submission.ESTADOS):
+            return HttpResponseBadRequest('Estado inválido')
+        actualizado = Submission.objects.filter(pk=lead_id).update(estado=estado)
+        if not actualizado:
+            return JsonResponse({'ok': False, 'error': 'El lead ya no existe.'}, status=404)
+        return JsonResponse({'ok': True})
+
     def sueldo_display(self, obj):
         return f"${obj.sueldo_liquido_clp:,.0f}"
     sueldo_display.short_description = "Sueldo Líquido"
@@ -243,10 +314,12 @@ class SubmissionAdmin(admin.ModelAdmin):
     precio_maximo_display.short_description = "Precio Máximo"
 
     def has_add_permission(self, request):
+        # Los leads solo se crean desde el formulario público, nunca a mano.
         return False
 
-    def has_change_permission(self, request, obj=None):
-        return False
+    # has_change_permission queda en el default (permiso de Django): el registro
+    # es accesible, pero todos los datos capturados están en readonly_fields, así
+    # que en la práctica solo se puede editar 'estado' (workflow del pipeline).
 
 
 @admin.register(InterestRate)
