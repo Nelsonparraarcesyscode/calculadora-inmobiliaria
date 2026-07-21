@@ -176,6 +176,14 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    # La calculadora se incrusta como iframe en el sitio principal. Para que la
+    # cookie CSRF viaje aunque el sitio embebedor esté en otro dominio (ej. el
+    # preproductivo en Astro, syscode.cloud), SameSite debe ser 'None'. Exige
+    # Secure, ya activo arriba. En producción real (petermanncapitalgroup.cl
+    # incrusta calculadora.petermanncapitalgroup.cl) es same-site y funcionaría
+    # igual, pero 'None' cubre ambos casos sin romper nada.
+    SESSION_COOKIE_SAMESITE = 'None'
+    CSRF_COOKIE_SAMESITE = 'None'
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     # El admin nunca debe embeberse; la calculadora pública se exceptúa con
