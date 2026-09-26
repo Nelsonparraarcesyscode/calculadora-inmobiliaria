@@ -15,9 +15,9 @@ MAX_ENVIOS_POR_HORA = 15
 
 
 def _client_ip(request):
-    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
-    if xff:
-        return xff.split(',')[0].strip()
+    # Sólo REMOTE_ADDR: X-Forwarded-For lo controla el cliente y permitiría
+    # saltarse el límite enviando una IP distinta en cada envío. En cPanel,
+    # Apache/Passenger ya entrega la IP real en REMOTE_ADDR (igual que axes).
     return request.META.get('REMOTE_ADDR', '')
 
 

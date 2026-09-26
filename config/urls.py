@@ -8,7 +8,7 @@ admin.site.site_title = "Admin"
 admin.site.index_title = "Panel de Administración"
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path(settings.ADMIN_URL, admin.site.urls),
     path('', include('calculadora.urls')),
 ]
 

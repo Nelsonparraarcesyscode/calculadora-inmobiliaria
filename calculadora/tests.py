@@ -3,7 +3,7 @@ from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 
-from .admin import _parse_num, _parse_bool
+from .admin import _parse_num, _parse_bool, _csv_safe
 from .forms import CalculadoraForm
 from .models import InterestRate, PdfConfig, Propiedad, Submission
 from .utils.calculations import factor_anualidad, calcular_capacidad
@@ -216,6 +216,14 @@ class ViewIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Submission.objects.count(), 0)
 
+    def test_rate_limit_ignora_x_forwarded_for(self):
+        # Falsificar X-Forwarded-For no debe permitir saltarse el límite.
+        cache.set('calc-envios-127.0.0.1', MAX_ENVIOS_POR_HORA, 3600)
+        response = self.client.post('/', self._post_data(),
+                                    HTTP_X_FORWARDED_FOR='203.0.113.99')
+        self.assertEqual(Submission.objects.count(), 0)
+        self.assertContains(response, 'demasiadas simulaciones')
+
     def test_rate_limit_por_ip(self):
         # Simular que la IP ya agotó su cuota horaria.
         cache.set('calc-envios-127.0.0.1', MAX_ENVIOS_POR_HORA, 3600)
@@ -297,3 +305,50 @@ class PipelineKanbanTests(TestCase):
         r = self._mover(self.lead.id, 'ganado')
         # Sin sesión de staff, el admin redirige al login (302).
         self.assertIn(r.status_code, (302, 403))
+
+
+class SeguridadCsvTests(TestCase):
+    """Los exportes CSV neutralizan fórmulas escritas por visitantes."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin = User.objects.create_superuser('boss', 'b@b.cl', 'pass12345')
+
+    def test_csv_safe(self):
+        self.assertEqual(_csv_safe('=HYPERLINK("http://x")'), "'=HYPERLINK(\"http://x\")")
+        self.assertEqual(_csv_safe('+56 9 1234'), "'+56 9 1234")
+        self.assertEqual(_csv_safe('@SUM(A1)'), "'@SUM(A1)")
+        self.assertEqual(_csv_safe('María'), 'María')
+        self.assertEqual(_csv_safe(-5), -5)  # los números no se alteran
+
+    def test_export_evaluaciones_neutraliza_formulas(self):
+        sub = Submission.objects.create(
+            nombre_completo='=cmd|"/c calc"!A1', email='x@test.cl')
+        self.client.force_login(self.admin)
+        r = self.client.post('/admin/calculadora/submission/', {
+            'action': 'exportar_csv', '_selected_action': [sub.pk]})
+        contenido = r.content.decode('utf-8')
+        self.assertIn("'=cmd", contenido)
+
+
+class PermisosAdminTests(TestCase):
+    """Un staff sin permisos del modelo no accede a las vistas personalizadas."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.staff = User.objects.create_user('staff', 's@s.cl', 'pass12345', is_staff=True)
+
+    def setUp(self):
+        self.client.force_login(self.staff)
+
+    def test_pipeline_sin_permiso(self):
+        r = self.client.get('/admin/calculadora/submission/pipeline/')
+        self.assertEqual(r.status_code, 403)
+
+    def test_importar_csv_sin_permiso(self):
+        r = self.client.get('/admin/calculadora/propiedad/importar-csv/')
+        self.assertEqual(r.status_code, 403)
+
+    def test_exportar_csv_sin_permiso(self):
+        r = self.client.get('/admin/calculadora/propiedad/exportar-csv/')
+        self.assertEqual(r.status_code, 403)
