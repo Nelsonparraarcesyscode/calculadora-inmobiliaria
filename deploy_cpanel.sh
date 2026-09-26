@@ -40,12 +40,22 @@ fi
 
 sed -i "s#/home/USUARIO#$HOME#" .htaccess
 
+if [ -f db.sqlite3 ]; then
+    echo "==> Respaldando base de datos antes de migrar..."
+    bash "$APP_DIR/backup_cpanel.sh"
+fi
+
 echo "==> Migrando base de datos..."
 python manage.py migrate
 echo "==> Recolectando archivos estaticos..."
 python manage.py collectstatic --noinput
 echo "==> Cargando datos iniciales..."
 python seed.py
+
+echo "==> Ajustando permisos de archivos sensibles..."
+chmod 600 .env db.sqlite3
+mkdir -p logs tmp/django_cache
+chmod 700 logs tmp/django_cache
 touch tmp/restart.txt
 
 echo ""

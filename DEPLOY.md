@@ -86,7 +86,10 @@ En producción el `.env` **exige** estas variables:
 | `DJANGO_ALLOWED_HOSTS` | Sí | Dominio(s) del sitio, separados por coma. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | Sí | Los mismos dominios con `https://`. |
 | `DJANGO_FRAME_ANCESTORS` | Recomendada | Dominios autorizados a incrustar la calculadora en iframe. |
-| `DJANGO_SUPERUSER_PASSWORD` | Recomendada | Sin ella, `seed.py` no crea/actualiza el superusuario. |
+| `DJANGO_SUPERUSER_PASSWORD` | Recomendada | Sin ella, `seed.py` no crea/actualiza el superusuario. Mínimo 12 caracteres. |
+| `DJANGO_ADMIN_URL` | Recomendada | Ruta del admin (por defecto `admin/`). Usar una ruta no obvia. |
+| `DJANGO_CSRF_COOKIE_SAMESITE` | Opcional | `None` por defecto (embed desde otro dominio). `Lax` cuando el sitio viva en petermanncapitalgroup.cl. |
+| `DJANGO_LOG_FILE` | Opcional | Log de errores (por defecto `logs/django.log`, rotativo 5×5 MB). |
 
 > Nota: si la instalación quedó con el antiguo usuario `admin/admin123`, al definir
 > `DJANGO_SUPERUSER_PASSWORD` el próximo deploy actualizará la contraseña automáticamente.
@@ -98,7 +101,22 @@ En producción el `.env` **exige** estas variables:
   usuario+IP durante 1 hora. Desbloquear con `python manage.py axes_reset`.
 - **Embed (clickjacking)**: la calculadora solo se puede incrustar en iframe desde
   los dominios de `DJANGO_FRAME_ANCESTORS` (CSP `frame-ancestors`); el admin es `DENY`.
-- Actualiza el valor UF desde el admin: `/admin/`
+- **Anti-spam**: máximo 15 simulaciones por IP y hora (contador en caché de
+  archivos `tmp/django_cache`, compartido entre procesos de Passenger). La IP se
+  toma de `REMOTE_ADDR`, no de `X-Forwarded-For` (el cliente puede falsificarlo).
+- **CSV**: los exportes neutralizan fórmulas (`=`, `+`, `-`, `@`) para evitar
+  inyección al abrirlos en Excel.
+- **Sesión del admin**: expira a las 8 horas; cookie `SameSite=Lax`.
+- **Contraseñas**: mínimo 12 caracteres.
+- **DEBUG**: si `DJANGO_DEBUG` no está definida vale `False` (falla segura).
+- **Logs**: errores 500 y eventos de seguridad en `logs/django.log`.
+- **Respaldos**: `backup_cpanel.sh` guarda `db.sqlite3` y `media/` en
+  `~/backups/calculadora` (30 días). `deploy_cpanel.sh` lo ejecuta antes de cada
+  migración. Programa además un cron diario en cPanel → Cron Jobs:
+  `0 3 * * * bash $HOME/calculadora-inmobiliaria/backup_cpanel.sh >> $HOME/logs/backup.log 2>&1`
+- **Dependencias**: revisar vulnerabilidades periódicamente con
+  `pip install pip-audit && pip-audit -r requirements.txt`.
+- Actualiza el valor UF desde el admin (`/<DJANGO_ADMIN_URL>`).
 
 ## Pipeline de leads (CRM Kanban)
 En `/admin/calculadora/submission/pipeline/` los leads se arrastran entre columnas

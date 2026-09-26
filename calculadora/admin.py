@@ -2,6 +2,7 @@ import csv
 import io
 import json
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import redirect, render
 from django.urls import path
@@ -9,6 +10,9 @@ from django.utils.html import format_html
 from django.views.decorators.http import require_POST
 from .models import Submission, InterestRate, Propiedad, PdfConfig
 
+
+# Tamaño máximo del CSV de importación de propiedades.
+MAX_CSV_BYTES = 2 * 1024 * 1024
 
 # Columnas del CSV de propiedades (sin imágenes).
 PROPIEDAD_CSV_FIELDS = [
@@ -45,6 +49,21 @@ def _parse_bool(value):
     return str(value).strip().lower() in ('1', 'true', 'si', 'sí', 'yes', 'x', 'activa')
 
 
+# Caracteres con los que Excel/LibreOffice interpretan una celda como fórmula.
+_CSV_FORMULA_PREFIXES = ('=', '+', '-', '@', '\t', '\r')
+
+
+def _csv_safe(value):
+    """Neutraliza la inyección de fórmulas en CSV (datos escritos por visitantes).
+
+    Un nombre como '=HYPERLINK(...)' se ejecutaría al abrir el archivo en
+    Excel; anteponer un apóstrofo lo deja como texto. Los números no se tocan.
+    """
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def exportar_csv(modeladmin, request, queryset):
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="evaluaciones.csv"'
@@ -61,7 +80,7 @@ def exportar_csv(modeladmin, request, queryset):
     for s in queryset:
         writer.writerow([
             s.created_at.strftime('%d/%m/%Y %H:%M'),
-            s.nombre_completo, s.email, s.telefono,
+            _csv_safe(s.nombre_completo), _csv_safe(s.email), _csv_safe(s.telefono),
             s.sueldo_liquido_clp, 'Sí' if s.complementa_renta else 'No', s.sueldo_2_clp,
             s.plazo_anios, s.pie_pct, s.tasa_interes,
             s.precio_maximo_uf, s.precio_maximo_clp,
@@ -80,11 +99,11 @@ def exportar_propiedades_csv(modeladmin, request, queryset):
     writer = csv.writer(response)
     writer.writerow(PROPIEDAD_CSV_FIELDS)
     for p in queryset:
-        writer.writerow([
+        writer.writerow([_csv_safe(v) for v in (
             p.id, p.edificio, p.comuna, p.entrega, p.tipologia, p.precio_uf,
             p.superficie_total_m2, p.superficie_util_m2, p.superficie_terraza_m2,
             p.enlace, 'si' if p.activa else 'no', p.orden,
-        ])
+        )])
     return response
 
 exportar_propiedades_csv.short_description = "Exportar seleccionadas a CSV (sin imágenes)"
@@ -136,18 +155,27 @@ class PropiedadAdmin(admin.ModelAdmin):
         return custom + urls
 
     def exportar_todo_csv_view(self, request):
+        if not self.has_view_permission(request):
+            raise PermissionDenied
         return exportar_propiedades_csv(self, request, Propiedad.objects.all())
 
     def importar_csv_view(self, request):
+        # Importar crea y actualiza propiedades: exige ambos permisos.
+        if not (self.has_add_permission(request) and self.has_change_permission(request)):
+            raise PermissionDenied
         if request.method == 'POST':
             archivo = request.FILES.get('archivo_csv')
             if not archivo:
                 self.message_user(request, "Debes seleccionar un archivo CSV.", level=messages.ERROR)
                 return redirect('..')
+            if archivo.size > MAX_CSV_BYTES:
+                self.message_user(request, "El archivo supera el máximo de 2 MB.", level=messages.ERROR)
+                return redirect('..')
+            contenido = archivo.read()
             try:
-                texto = archivo.read().decode('utf-8-sig')
+                texto = contenido.decode('utf-8-sig')
             except UnicodeDecodeError:
-                texto = archivo.read().decode('latin-1')
+                texto = contenido.decode('latin-1')
             reader = csv.DictReader(io.StringIO(texto))
 
             creadas, actualizadas, errores = 0, 0, []
@@ -269,6 +297,8 @@ class SubmissionAdmin(admin.ModelAdmin):
         return custom + urls
 
     def pipeline_view(self, request):
+        if not self.has_view_permission(request):
+            raise PermissionDenied
         columnas = []
         for key, label in Submission.ESTADOS:
             qs = Submission.objects.filter(estado=key)

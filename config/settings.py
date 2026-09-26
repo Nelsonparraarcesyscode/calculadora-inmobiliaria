@@ -24,9 +24,10 @@ try:
 except ImportError:
     pass
 
-# DEBUG: por defecto True para desarrollo local. En producción (cPanel) el
-# .env define DJANGO_DEBUG=False, lo que activa todo el hardening de más abajo.
-DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
+# DEBUG: por defecto False (falla segura). Si en producción el .env no carga,
+# la app no queda en modo debug exponiendo detalles internos. En desarrollo
+# local el .env debe definir DJANGO_DEBUG=True.
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
 
 # SECRET_KEY: obligatoria en producción; el fallback sólo aplica con DEBUG.
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', '')
@@ -38,7 +39,8 @@ if not SECRET_KEY:
         raise ImproperlyConfigured(
             'DJANGO_SECRET_KEY no está definida. Genera una con '
             '"python -c \"from django.core.management.utils import get_random_secret_key; '
-            'print(get_random_secret_key())\"" y configúrala como variable de entorno.'
+            'print(get_random_secret_key())\"" y configúrala como variable de entorno. '
+            'En desarrollo local basta con DJANGO_DEBUG=True en el archivo .env.'
         )
 
 _allowed = os.environ.get('DJANGO_ALLOWED_HOSTS', '')
@@ -126,6 +128,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 12},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
@@ -167,6 +170,22 @@ MEDIA_ROOT = Path(os.environ.get('DJANGO_MEDIA_ROOT', BASE_DIR / 'media'))
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Caché en archivos: el contador anti-spam del formulario debe compartirse
+# entre los procesos de Passenger y sobrevivir a sus reinicios (la caché en
+# memoria por defecto se pierde y no se comparte).
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': os.environ.get('DJANGO_CACHE_DIR', str(BASE_DIR / 'tmp' / 'django_cache')),
+    }
+}
+
+# Ruta del admin. Configurable para no exponerla en la ruta obvia /admin/.
+ADMIN_URL = os.environ.get('DJANGO_ADMIN_URL', 'admin/').strip('/') + '/'
+
+# La sesión del admin expira tras 8 horas (por defecto Django usa 2 semanas).
+SESSION_COOKIE_AGE = 60 * 60 * 8
+
 # ─── Security settings for production ─────────────────────────────────────────
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -178,12 +197,13 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     # La calculadora se incrusta como iframe en el sitio principal. Para que la
     # cookie CSRF viaje aunque el sitio embebedor esté en otro dominio (ej. el
-    # preproductivo en Astro, syscode.cloud), SameSite debe ser 'None'. Exige
-    # Secure, ya activo arriba. En producción real (petermanncapitalgroup.cl
-    # incrusta calculadora.petermanncapitalgroup.cl) es same-site y funcionaría
-    # igual, pero 'None' cubre ambos casos sin romper nada.
-    SESSION_COOKIE_SAMESITE = 'None'
-    CSRF_COOKIE_SAMESITE = 'None'
+    # preproductivo syscode.cloud), su SameSite debe ser 'None' (exige Secure,
+    # ya activo arriba). Configurable: cuando el sitio viva en
+    # petermanncapitalgroup.cl el embed es same-site y puede volver a 'Lax'.
+    CSRF_COOKIE_SAMESITE = os.environ.get('DJANGO_CSRF_COOKIE_SAMESITE', 'None')
+    # El formulario público no usa sesión: sólo el admin, que nunca se
+    # embebe. Lax evita que la sesión del admin viaje en peticiones cross-site.
+    SESSION_COOKIE_SAMESITE = 'Lax'
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     # El admin nunca debe embeberse; la calculadora pública se exceptúa con
@@ -207,3 +227,32 @@ CALC_FRAME_ANCESTORS = [h.strip() for h in _frame_ancestors.split(',') if h.stri
 # CSRF trusted origins (set your domain in production)
 _csrf = os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '')
 CSRF_TRUSTED_ORIGINS = [h.strip() for h in _csrf.split(',') if h.strip()]
+
+# ─── Logging ──────────────────────────────────────────────────────────────────
+# En producción los errores (500, intentos sospechosos de host/CSRF, bloqueos
+# de axes) se escriben en un archivo rotativo para poder revisarlos.
+if not DEBUG:
+    LOG_FILE = Path(os.environ.get('DJANGO_LOG_FILE', BASE_DIR / 'logs' / 'django.log'))
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'simple': {'format': '{asctime} {levelname} {name}: {message}', 'style': '{'},
+        },
+        'handlers': {
+            'file': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'filename': str(LOG_FILE),
+                'maxBytes': 5 * 1024 * 1024,
+                'backupCount': 5,
+                'formatter': 'simple',
+                'encoding': 'utf-8',
+            },
+        },
+        'loggers': {
+            'django': {'handlers': ['file'], 'level': 'WARNING'},
+            'django.security': {'handlers': ['file'], 'level': 'WARNING', 'propagate': False},
+            'axes': {'handlers': ['file'], 'level': 'WARNING', 'propagate': False},
+        },
+    }
